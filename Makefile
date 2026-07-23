@@ -4,33 +4,28 @@ AS      = nasm
 LD      = x86_64-elf-ld
 
 # flags
-CFLAGS  = -ffreestanding -O2 -Wall -Wextra -m32
+CFLAGS  = -ffreestanding -O2 -Wall -Wextra -m32 -mgeneral-regs-only
 ASFLAGS = -f elf32
 LDFLAGS = -m elf_i386 -T linker.ld
 
 # files
-OBJS = boot.o kernel.o gdt.o gdt_asm.o
+SRCS_C   = $(wildcard src/*.c)
+SRCS_ASM = $(wildcard src/*.asm)
+OBJS     = $(notdir $(SRCS_C:.c=.o)) $(notdir $(SRCS_ASM:.asm=.o))
 
 # Default target
 all: kernel.bin
 
-# Assemble boot code
-boot.o: src/boot.asm
-	$(AS) $(ASFLAGS) $< -o $@
-
-# Compile kernel
-kernel.o: src/kernel.c
+# One generic rule handles every .c file, one handles every .asm file
+%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
+
+%.o: src/%.asm
+	$(AS) $(ASFLAGS) $< -o $@
 
 # Link everything
 kernel.bin: $(OBJS)
 	$(LD) $(LDFLAGS) $(OBJS) -o $@
-
-gdt.o: src/gdt.c
-	$(CC) $(CFLAGS) -c $< -o $@
-
-gdt_asm.o: src/gdt_asm.asm
-	$(AS) $(ASFLAGS) $< -o $@
 
 # Run with QEMU
 run: kernel.bin
@@ -39,3 +34,5 @@ run: kernel.bin
 # Remove generated files
 clean:
 	rm -f *.o kernel.bin
+
+.PHONY: all run clean

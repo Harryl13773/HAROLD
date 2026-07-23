@@ -16,6 +16,7 @@ extern kernel_main
 _start:
     cli                     ; clearing interrupt flag
     mov esp, stack_top      ; setting up stack pointer
+    push ebx                ; multiboot info pointer from GRUB
     call kernel_main        ; handing to the kernel_main.c
 
 ; the backup if kernel_main returns

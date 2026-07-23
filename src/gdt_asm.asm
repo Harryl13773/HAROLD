@@ -1,3 +1,5 @@
+; Purpose: actually executing the lgdt instruction and reloading to every segment
+; so the CPU starts using the new tables
 bits 32
 
 section .text
