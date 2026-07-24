@@ -8,31 +8,39 @@ CFLAGS  = -ffreestanding -O2 -Wall -Wextra -m32 -mgeneral-regs-only
 ASFLAGS = -f elf32
 LDFLAGS = -m elf_i386 -T linker.ld
 
-# files
+# Automatically pick up every .c and .asm file in src/
 SRCS_C   = $(wildcard src/*.c)
 SRCS_ASM = $(wildcard src/*.asm)
 OBJS     = $(notdir $(SRCS_C:.c=.o)) $(notdir $(SRCS_ASM:.asm=.o))
 
-# Default target
 all: kernel.bin
 
-# One generic rule handles every .c file, one handles every .asm file
 %.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 %.o: src/%.asm
 	$(AS) $(ASFLAGS) $< -o $@
 
-# Link everything
 kernel.bin: $(OBJS)
 	$(LD) $(LDFLAGS) $(OBJS) -o $@
 
-# Run with QEMU
-run: kernel.bin
-	qemu-system-x86_64 -kernel kernel.bin
+iso: kernel.bin
+	mkdir -p isodir/boot/grub
+	cp kernel.bin isodir/boot/kernel.bin
+	cp grub.cfg isodir/boot/grub/grub.cfg
+	grub-mkrescue -o harold.iso isodir
 
-# Remove generated files
+disk.img:
+	qemu-img create -f raw disk.img 16M
+
+run: kernel.bin disk.img
+	qemu-system-x86_64 -kernel kernel.bin -drive file=disk.img,format=raw,if=ide
+
+run-iso: iso disk.img
+	qemu-system-x86_64 -cdrom harold.iso -drive file=disk.img,format=raw,if=ide
+
 clean:
-	rm -f *.o kernel.bin
+	rm -f *.o kernel.bin harold.iso
+	rm -rf isodir
 
-.PHONY: all run clean
+.PHONY: all run run-iso iso clean

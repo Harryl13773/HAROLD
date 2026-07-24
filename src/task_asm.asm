@@ -27,7 +27,6 @@ switch_task:
     ret                    ; jumps to whatever return address sits on the new stack
 
 ; First-run trampoline for a brand-new task
-; First-run trampoline for a brand-new task
 task_launch:
     sti             ; a new task inherits interrupts-disabled — re-enable them
     pop eax

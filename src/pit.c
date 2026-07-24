@@ -9,6 +9,7 @@
 #define PIT_BASE_FREQ 1193182
 
 static volatile uint32_t tick_count = 0;
+static uint32_t configured_frequency = 0;
 
 // Fires on every IRQ0 — counts ticks and hands off to the scheduler
 static void pit_handler(void)
@@ -19,6 +20,7 @@ static void pit_handler(void)
 
 void pit_init(uint32_t frequency)
 {
+    configured_frequency = frequency;
     uint32_t divisor = PIT_BASE_FREQ / frequency;
 
     outb(PIT_COMMAND, 0x36);
@@ -31,4 +33,9 @@ void pit_init(uint32_t frequency)
 uint32_t pit_get_ticks(void)
 {
     return tick_count;
+}
+
+uint32_t pit_get_frequency(void)
+{
+    return configured_frequency;
 }

@@ -1,11 +1,7 @@
-/*
-building the actual GDT data structure in memory and hands to the CPU
-*/
-
 #include <stdint.h>
 #include "gdt.h"
+#include "tss.h"
 
-// describing the byte layout
 struct gdt_entry
 {
     uint16_t limit_low;
@@ -16,21 +12,20 @@ struct gdt_entry
     uint8_t base_high;
 } __attribute__((packed));
 
-// describing the small pointer structure the lgdt instruction actually consumes
 struct gdt_ptr
 {
-    uint16_t limit; // total size of the GDT
-    uint32_t base;  // where the memory address where the table starts
+    uint16_t limit;
+    uint32_t base;
 } __attribute__((packed));
 
-static struct gdt_entry gdt[3]; // array of 3 entries (null, code, data)
-static struct gdt_ptr gp;       // describe the gdt to the CPU
+#define GDT_ENTRY_COUNT 6
+
+static struct gdt_entry gdt[GDT_ENTRY_COUNT];
+static struct gdt_ptr gp;
 
 extern void gdt_flush(uint32_t);
 
-/**
- * base and limit splits across the struct's fragmented tables
- */
+// Splits base/limit across the entry's fragmented fields
 static void gdt_set_gate(int num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran)
 {
     gdt[num].base_low = (base & 0xFFFF);
@@ -44,15 +39,17 @@ static void gdt_set_gate(int num, uint32_t base, uint32_t limit, uint8_t access,
     gdt[num].access = access;
 }
 
-// call gdt_flush, passing along the address of gp and send into the CPU
 void gdt_install(void)
 {
-    gp.limit = (sizeof(struct gdt_entry) * 3) - 1;
+    gp.limit = (sizeof(struct gdt_entry) * GDT_ENTRY_COUNT) - 1;
     gp.base = (uint32_t)&gdt;
 
-    gdt_set_gate(0, 0, 0, 0, 0);                // null descriptor
-    gdt_set_gate(1, 0, 0xFFFFFFFF, 0x9A, 0xCF); // code segment
-    gdt_set_gate(2, 0, 0xFFFFFFFF, 0x92, 0xCF); // data segment
+    gdt_set_gate(0, 0, 0, 0, 0);                                            // null descriptor
+    gdt_set_gate(1, 0, 0xFFFFFFFF, 0x9A, 0xCF);                             // kernel code, ring 0
+    gdt_set_gate(2, 0, 0xFFFFFFFF, 0x92, 0xCF);                             // kernel data, ring 0
+    gdt_set_gate(3, 0, 0xFFFFFFFF, 0xFA, 0xCF);                             // user code, ring 3
+    gdt_set_gate(4, 0, 0xFFFFFFFF, 0xF2, 0xCF);                             // user data, ring 3
+    gdt_set_gate(5, (uint32_t)&tss, sizeof(struct tss_entry) - 1, 0x89, 0); // TSS descriptor
 
     gdt_flush((uint32_t)&gp);
 }

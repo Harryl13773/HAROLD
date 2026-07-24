@@ -17,4 +17,18 @@ static inline void outb(uint16_t port, uint8_t data)
     __asm__ volatile("outb %0, %1" : : "a"(data), "Nd"(port));
 }
 
+// Reads a 16-bit word from the given I/O port
+static inline uint16_t inw(uint16_t port)
+{
+    uint16_t result;
+    __asm__ volatile("inw %1, %0" : "=a"(result) : "Nd"(port));
+    return result;
+}
+
+// Writes a 16-bit word to the given I/O port
+static inline void outw(uint16_t port, uint16_t data)
+{
+    __asm__ volatile("outw %0, %1" : : "a"(data), "Nd"(port));
+}
+
 #endif

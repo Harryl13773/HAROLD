@@ -4,11 +4,11 @@
 
 #define PAGE_PRESENT 0x1
 #define PAGE_WRITABLE 0x2
+#define PAGE_USER 0x4
 #define ENTRIES 1024
 #define PAGE_SIZE 4096
 
-// Both must be page-aligned — the CPU requires this, low 12 bits of
-// their addresses are used as flag bits, not part of the address
+// Both must be page-aligned — low 12 bits of the address double as flag bits
 static uint32_t page_directory[ENTRIES] __attribute__((aligned(PAGE_SIZE)));
 static uint32_t first_page_table[ENTRIES] __attribute__((aligned(PAGE_SIZE)));
 
@@ -29,20 +29,19 @@ static inline void enable_paging(void)
 
 void paging_init(void)
 {
-    // Map every frame in the first 4MB to itself: virtual == physical
+    // PAGE_USER makes the whole 4MB ring-3 accessible — not real isolation yet, just enough to prove ring 3 works
     for (uint32_t i = 0; i < ENTRIES; i++)
     {
-        first_page_table[i] = (i * PAGE_SIZE) | PAGE_PRESENT | PAGE_WRITABLE;
+        first_page_table[i] = (i * PAGE_SIZE) | PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER;
     }
 
-    // Every other 4MB region stays completely unmapped for now —
-    // touching any of that address space will correctly page-fault
+    // Every other 4MB region stays unmapped — touching it will correctly page-fault
     for (uint32_t i = 0; i < ENTRIES; i++)
     {
         page_directory[i] = 0;
     }
 
-    page_directory[0] = (uint32_t)first_page_table | PAGE_PRESENT | PAGE_WRITABLE;
+    page_directory[0] = (uint32_t)first_page_table | PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER;
 
     load_page_directory(page_directory);
     enable_paging();

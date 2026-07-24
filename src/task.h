@@ -10,16 +10,18 @@ typedef enum
 {
     TASK_UNUSED,
     TASK_READY,
-    TASK_RUNNING
+    TASK_RUNNING,
+    TASK_SLEEPING
 } task_state_t;
 
-// Everything needed to pause a task and later resume it exactly where it left off
+// Everything needed to pause a task and later resume it
 struct task
 {
     uint32_t esp;
     uint32_t *stack_base;
     task_state_t state;
     int id;
+    uint32_t wake_tick; // tick at which a sleeping task should wake
 };
 
 // Sets up the task system and turns the currently running code into task 0
@@ -31,7 +33,16 @@ int task_create(void (*entry_point)(void));
 // Switches execution to a specific task by ID
 void task_switch_to(int id);
 
-// Called on every timer tick — advances to the next runnable task
+// Called on every timer tick — wakes sleepers, then advances to the next task
 void schedule(void);
+
+// Ends the current task and switches to the next runnable one
+void task_exit(void);
+
+// Frees stack memory for any task that has exited
+void task_reap(void);
+
+// Blocks the calling task for at least `ms` milliseconds
+void task_sleep(uint32_t ms);
 
 #endif

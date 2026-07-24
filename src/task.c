@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include "task.h"
 #include "heap.h"
+#include "pit.h"
 #include "terminal.h"
 
 extern void switch_task(uint32_t *old_esp, uint32_t new_esp); // defined in task_asm.asm
@@ -11,17 +12,57 @@ static struct task tasks[MAX_TASKS];
 static int current_task = -1;
 static int task_count = 0;
 
-// Called if a task's entry function ever returns — a task must never fall off the end
+// Finds the next runnable task after 'from', wrapping around the task list
+static int next_task_id(int from)
+{
+    for (int i = 1; i <= task_count; i++)
+    {
+        int id = (from + i) % task_count;
+        if (tasks[id].state == TASK_READY || tasks[id].state == TASK_RUNNING)
+        {
+            return id;
+        }
+    }
+    return from;
+}
+
+// Switches execution to a specific task by ID
+void task_switch_to(int id)
+{
+    int old = current_task;
+    current_task = id;
+    tasks[id].state = TASK_RUNNING;
+    switch_task(&tasks[old].esp, tasks[id].esp);
+}
+
+// Ends the current task and switches to the next runnable one
 void task_exit(void)
 {
-    terminal_writestring("Task exited\n");
+    tasks[current_task].state = TASK_UNUSED;
+
+    int next = next_task_id(current_task);
+    task_switch_to(next);
+
     for (;;)
     {
-        __asm__ volatile("hlt");
+        __asm__ volatile("hlt"); // never actually reached
     }
 }
 
-// Turns the currently executing code into task 0 — it's already running, nothing to construct
+// Frees stack memory for any task that has exited
+void task_reap(void)
+{
+    for (int i = 1; i < task_count; i++)
+    {
+        if (tasks[i].state == TASK_UNUSED && tasks[i].stack_base != NULL)
+        {
+            kfree(tasks[i].stack_base);
+            tasks[i].stack_base = NULL;
+        }
+    }
+}
+
+// Turns the currently executing code into task 0
 void tasking_init(void)
 {
     for (int i = 0; i < MAX_TASKS; i++)
@@ -31,7 +72,7 @@ void tasking_init(void)
 
     tasks[0].id = 0;
     tasks[0].state = TASK_RUNNING;
-    tasks[0].stack_base = NULL; // task 0 keeps using the kernel's original boot stack
+    tasks[0].stack_base = NULL;
 
     current_task = 0;
     task_count = 1;
@@ -39,12 +80,12 @@ void tasking_init(void)
     terminal_writestring("Tasking initialized\n");
 }
 
-// Hand-builds a new task's stack so its first resume jumps straight into entry_point
+// Hand-builds a new task's stack so its first resume jumps into entry_point
 int task_create(void (*entry_point)(void))
 {
     if (task_count >= MAX_TASKS)
     {
-        return -1; // no free task slots
+        return -1;
     }
 
     int id = task_count;
@@ -53,7 +94,7 @@ int task_create(void (*entry_point)(void))
     t->stack_base = (uint32_t *)kmalloc(TASK_STACK_SIZE);
     if (t->stack_base == NULL)
     {
-        return -1; // heap couldn't provide a stack
+        return -1;
     }
 
     uint32_t *stack_top = (uint32_t *)((uint8_t *)t->stack_base + TASK_STACK_SIZE);
@@ -73,35 +114,26 @@ int task_create(void (*entry_point)(void))
     return id;
 }
 
-// Switches execution to a specific task by ID — a preview of what the scheduler will call repeatedly
-void task_switch_to(int id)
+// Wakes any sleeping task whose wake_tick has passed
+static void wake_sleepers(uint32_t now)
 {
-    int old = current_task;
-    current_task = id;
-    tasks[id].state = TASK_RUNNING;
-    switch_task(&tasks[old].esp, tasks[id].esp);
-}
-
-// Finds the next runnable task after 'from', wrapping around the task list
-static int next_task_id(int from)
-{
-    for (int i = 1; i <= task_count; i++)
+    for (int i = 0; i < task_count; i++)
     {
-        int id = (from + i) % task_count;
-        if (tasks[id].state == TASK_READY || tasks[id].state == TASK_RUNNING)
+        if (tasks[i].state == TASK_SLEEPING && (int32_t)(now - tasks[i].wake_tick) >= 0)
         {
-            return id;
+            tasks[i].state = TASK_READY;
         }
     }
-    return from; // nothing else runnable — stay on the current task
 }
 
-// Called from the PIT handler every tick — the actual round-robin switch
+// Called from the PIT handler every tick — the round-robin switch
 void schedule(void)
 {
+    wake_sleepers(pit_get_ticks());
+
     if (task_count <= 1)
     {
-        return; // only one task exists, nothing to switch to
+        return;
     }
 
     int next = next_task_id(current_task);
@@ -116,4 +148,30 @@ void schedule(void)
     }
 
     task_switch_to(next);
+}
+
+// Blocks the calling task for at least `ms` milliseconds
+void task_sleep(uint32_t ms)
+{
+    uint32_t freq = pit_get_frequency();
+    if (freq == 0)
+    {
+        freq = 100; // fallback; pit_init always runs before any task exists
+    }
+
+    uint32_t ticks = (ms * freq) / 1000;
+    if (ticks == 0)
+    {
+        ticks = 1;
+    }
+
+    __asm__ volatile("cli");
+
+    tasks[current_task].wake_tick = pit_get_ticks() + ticks;
+    tasks[current_task].state = TASK_SLEEPING;
+
+    int next = next_task_id(current_task);
+    task_switch_to(next);
+
+    __asm__ volatile("sti"); // re-enable interrupts on resume, no iret will do it for us
 }
