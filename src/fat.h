@@ -6,7 +6,16 @@
 // Reads the boot sector on the primary master and validates it's FAT16
 int fat_init(void);
 
-// Looks up an 8.3 filename in the root directory and copies it into buffer
+// Looks up filename (any length, via LFN when present) and copies it into buffer
 int fat_read_file(const char *filename, uint8_t *buffer, uint32_t buffer_size);
+
+// Opens filename for reading, returns a file descriptor (>= 3) or -1
+int fat_open(const char *filename);
+
+// Reads up to len bytes from fd, resuming from the last position; returns bytes read, 0 at EOF, or -1
+int fat_read(int fd, uint8_t *buffer, uint32_t len);
+
+// Closes a descriptor opened by fat_open; returns 0 or -1 on an invalid fd
+int fat_close(int fd);
 
 #endif

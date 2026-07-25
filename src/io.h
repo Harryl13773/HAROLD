@@ -31,4 +31,18 @@ static inline void outw(uint16_t port, uint16_t data)
     __asm__ volatile("outw %0, %1" : : "a"(data), "Nd"(port));
 }
 
+// Disables interrupts and returns the prior EFLAGS, for protecting a critical section
+static inline uint32_t save_and_disable_interrupts(void)
+{
+    uint32_t flags;
+    __asm__ volatile("pushfl\n\tpopl %0\n\tcli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+// Restores EFLAGS from save_and_disable_interrupts — safe to nest, unlike a bare sti
+static inline void restore_interrupts(uint32_t flags)
+{
+    __asm__ volatile("pushl %0\n\tpopfl" : : "r"(flags) : "memory", "cc");
+}
+
 #endif

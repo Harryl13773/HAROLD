@@ -3,6 +3,7 @@
 #include "task.h"
 #include "heap.h"
 #include "pit.h"
+#include "tss.h"
 #include "terminal.h"
 
 extern void switch_task(uint32_t *old_esp, uint32_t new_esp); // defined in task_asm.asm
@@ -26,12 +27,18 @@ static int next_task_id(int from)
     return from;
 }
 
-// Switches execution to a specific task by ID
+// Switches to task ID, also pointing the TSS at this task's own kernel stack for ring3->ring0 transitions
 void task_switch_to(int id)
 {
     int old = current_task;
     current_task = id;
     tasks[id].state = TASK_RUNNING;
+
+    if (tasks[id].stack_base != NULL)
+    {
+        tss_set_kernel_stack((uint32_t)tasks[id].stack_base + TASK_STACK_SIZE);
+    }
+
     switch_task(&tasks[old].esp, tasks[id].esp);
 }
 
@@ -80,15 +87,30 @@ void tasking_init(void)
     terminal_writestring("Tasking initialized\n");
 }
 
-// Hand-builds a new task's stack so its first resume jumps into entry_point
+// Hand-builds a new task's stack; reuses an already-reaped slot before growing task_count
 int task_create(void (*entry_point)(void))
 {
-    if (task_count >= MAX_TASKS)
+    int id = -1;
+
+    for (int i = 1; i < task_count; i++)
     {
-        return -1;
+        if (tasks[i].state == TASK_UNUSED && tasks[i].stack_base == NULL)
+        {
+            id = i;
+            break;
+        }
     }
 
-    int id = task_count;
+    if (id == -1)
+    {
+        if (task_count >= MAX_TASKS)
+        {
+            return -1;
+        }
+        id = task_count;
+        task_count++;
+    }
+
     struct task *t = &tasks[id];
 
     t->stack_base = (uint32_t *)kmalloc(TASK_STACK_SIZE);
@@ -110,7 +132,6 @@ int task_create(void (*entry_point)(void))
     t->state = TASK_READY;
     t->id = id;
 
-    task_count++;
     return id;
 }
 
@@ -174,4 +195,23 @@ void task_sleep(uint32_t ms)
     task_switch_to(next);
 
     __asm__ volatile("sti"); // re-enable interrupts on resume, no iret will do it for us
+}
+
+// Blocks the calling task until the target task exits (becomes UNUSED)
+void task_wait(int target_id)
+{
+    while (tasks[target_id].state != TASK_UNUSED)
+    {
+        __asm__ volatile("cli");
+
+        if (tasks[current_task].state == TASK_RUNNING)
+        {
+            tasks[current_task].state = TASK_READY;
+        }
+
+        int next = next_task_id(current_task);
+        task_switch_to(next);
+
+        __asm__ volatile("sti");
+    }
 }

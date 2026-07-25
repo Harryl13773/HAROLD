@@ -5,7 +5,8 @@
 
 struct tss_entry tss;
 
-// Kernel stack for ring3->ring0 transitions — safe only with one ring3 task at a time
+// Bootstrap stack, used only before the first task switch — every task
+// after that gets its own esp0 via tss_set_kernel_stack (see task.c)
 static uint8_t tss_kernel_stack[4096] __attribute__((aligned(16)));
 
 // Loads the task register with the TSS selector from the GDT

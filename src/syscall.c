@@ -2,6 +2,8 @@
 #include "idt.h"
 #include "terminal.h"
 #include "task.h"
+#include "keyboard.h"
+#include "fat.h"
 #include "syscall.h"
 
 extern void syscall_stub(void);
@@ -15,16 +17,71 @@ struct registers
     uint32_t eip, cs, eflags, useresp, ss;
 };
 
-#define SYSCALL_WRITE_CHAR 0
+#define SYSCALL_WRITE 0
 #define SYSCALL_EXIT 1
+#define SYSCALL_READ 2
+#define SYSCALL_OPEN 3
+#define SYSCALL_CLOSE 4
 
 void syscall_handler(struct registers *regs)
 {
     switch (regs->eax)
     {
-    case SYSCALL_WRITE_CHAR:
-        terminal_putchar((char)regs->ebx);
+    case SYSCALL_WRITE:
+    {
+        const char *buf = (const char *)regs->ebx;
+        uint32_t len = regs->ecx;
+
+        for (uint32_t i = 0; i < len; i++)
+        {
+            terminal_putchar(buf[i]);
+        }
+
+        regs->eax = len;
         break;
+    }
+
+    case SYSCALL_READ:
+    {
+        int fd = (int)regs->ebx;
+        char *buf = (char *)regs->ecx;
+        uint32_t max_len = regs->edx;
+
+        if (fd == 0)
+        {
+            // stdin — blocks on the keyboard, unchanged from before
+            uint32_t count = 0;
+            while (count < max_len)
+            {
+                char c = keyboard_read_char();
+                buf[count++] = c;
+                if (c == '\n')
+                {
+                    break;
+                }
+            }
+            regs->eax = count;
+        }
+        else
+        {
+            regs->eax = (uint32_t)fat_read(fd, (uint8_t *)buf, max_len);
+        }
+        break;
+    }
+
+    case SYSCALL_OPEN:
+    {
+        const char *filename = (const char *)regs->ebx;
+        regs->eax = (uint32_t)fat_open(filename);
+        break;
+    }
+
+    case SYSCALL_CLOSE:
+    {
+        int fd = (int)regs->ebx;
+        regs->eax = (uint32_t)fat_close(fd);
+        break;
+    }
 
     case SYSCALL_EXIT:
         task_exit(); // never returns — removes this task and switches away

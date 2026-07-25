@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include "heap.h"
 #include "terminal.h"
+#include "io.h"
 
 #define HEAP_SIZE 0x100000 // 1MB — comfortably inside the identity-mapped 4MB
 #define ALIGNMENT 8        // keeps every returned pointer 8-byte aligned
@@ -67,7 +68,9 @@ static void split_block(struct block_header *block, size_t size)
     block->size = size;
 }
 
-// First-fit search through the block list for a free block big enough for size
+// First-fit search through the block list for a free block big enough for size.
+// Interrupts stay disabled for the walk — a preempted mid-split heap would
+// corrupt the list for whichever task runs next and also touches it.
 void *kmalloc(size_t size)
 {
     if (!heap_ready || size == 0)
@@ -75,8 +78,11 @@ void *kmalloc(size_t size)
         return NULL;
     }
 
+    uint32_t flags = save_and_disable_interrupts();
+
     size = align_up(size);
     struct block_header *block = heap_start;
+    void *result = NULL;
 
     while (block != NULL)
     {
@@ -84,13 +90,15 @@ void *kmalloc(size_t size)
         {
             split_block(block, size);
             block->free = 0;
-            return (void *)(block + 1); // payload starts right after the header
+            result = (void *)(block + 1); // payload starts right after the header
+            break;
         }
 
         block = block->next;
     }
 
-    return NULL; // heap exhausted — caller must check for this
+    restore_interrupts(flags);
+    return result; // NULL means the heap is exhausted — caller must check
 }
 
 // Merges block b into block a, removing b from the chain
@@ -110,8 +118,10 @@ void kfree(void *ptr)
 {
     if (ptr == NULL)
     {
-        return; // freeing NULL is a no-op, not an error
+        return; // freeing NULL is a no-op, not an error — no shared state touched
     }
+
+    uint32_t flags = save_and_disable_interrupts();
 
     struct block_header *block = (struct block_header *)ptr - 1;
     block->free = 1;
@@ -125,4 +135,6 @@ void kfree(void *ptr)
     {
         coalesce(block->prev, block);
     }
+
+    restore_interrupts(flags);
 }

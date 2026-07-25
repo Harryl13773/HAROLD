@@ -45,4 +45,7 @@ void task_reap(void);
 // Blocks the calling task for at least `ms` milliseconds
 void task_sleep(uint32_t ms);
 
+// Blocks the calling task until the target task exits
+void task_wait(int target_id);
+
 #endif

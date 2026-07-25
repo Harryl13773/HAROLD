@@ -17,48 +17,9 @@
 #include "fat.h"
 #include "tss.h"
 #include "syscall.h"
-#include "usermode.h"
+#include "shell.h"
 
 extern uint32_t kernel_end;
-
-// Prints A five times, sleeping between each, then returns (task_exit runs automatically)
-static void task_a(void)
-{
-    for (int i = 0; i < 5; i++)
-    {
-        terminal_writestring("A");
-        task_sleep(200);
-    }
-}
-
-// Prints B forever, sleeping between each
-static void task_b(void)
-{
-    while (1)
-    {
-        terminal_writestring("B");
-        task_sleep(500);
-    }
-}
-
-// Runs entirely at ring 3, using only int 0x80 — no direct kernel calls
-static void usermode_test(void)
-{
-    const char *msg = "Hello from ring 3!\n";
-    for (int i = 0; msg[i] != '\0'; i++)
-    {
-        __asm__ volatile("int $0x80" : : "a"(0), "b"(msg[i]));
-    }
-
-    __asm__ volatile("int $0x80" : : "a"(1)); // exit
-}
-
-// Ring-0 trampoline into ring 3 — only one such task may exist at a time, see tss.c
-static void usermode_task(void)
-{
-    usermode_enter(usermode_test);
-    terminal_writestring("usermode_task: failed to enter ring 3\n"); // only reached on kmalloc failure
-}
 
 void kernel_main(uint32_t multiboot_addr)
 {
@@ -132,9 +93,7 @@ void kernel_main(uint32_t multiboot_addr)
 
     // Tasking depends on the heap, so it comes after
     tasking_init();
-    task_create(task_a);
-    task_create(task_b);
-    task_create(usermode_task);
+    task_create(shell_task);
 
     // Only now is every subsystem ready for interrupts to actually fire
     __asm__ volatile("sti");

@@ -136,6 +136,22 @@ static const char scancode_ascii_shift[128] =
 // Tracks whether either shift key is currently held
 static int shift_held = 0;
 
+#define KB_BUFFER_SIZE 256
+static char kb_buffer[KB_BUFFER_SIZE];
+static volatile int kb_head = 0;
+static volatile int kb_tail = 0;
+
+// Queues a character for keyboard_read_char; drops it if the buffer is full
+static void kb_buffer_push(char c)
+{
+    int next = (kb_head + 1) % KB_BUFFER_SIZE;
+    if (next != kb_tail)
+    {
+        kb_buffer[kb_head] = c;
+        kb_head = next;
+    }
+}
+
 static void keyboard_handler(void)
 {
     uint8_t scancode = inb(0x60);
@@ -158,10 +174,25 @@ static void keyboard_handler(void)
     if (c != 0)
     {
         terminal_putchar(c);
+        kb_buffer_push(c);
     }
 }
 
 void keyboard_install(void)
 {
     irq_set_handler(1, keyboard_handler);
+}
+
+// Blocks (via hlt, not a busy-spin) until a character is available
+char keyboard_read_char(void)
+{
+    __asm__ volatile("sti"); // this may run with IF=0 if called from inside a syscall
+    while (kb_head == kb_tail)
+    {
+        __asm__ volatile("hlt");
+    }
+
+    char c = kb_buffer[kb_tail];
+    kb_tail = (kb_tail + 1) % KB_BUFFER_SIZE;
+    return c;
 }

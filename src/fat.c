@@ -46,8 +46,29 @@ struct fat_dir_entry
     uint32_t file_size;
 } __attribute__((packed));
 
+// One 32-byte LFN entry — old DOS tools skip these via attr==0x0F, we now actually read them
+struct fat_lfn_entry
+{
+    uint8_t sequence;       // ordinal (1-based), 0x40 bit set on the first one encountered
+    uint16_t name1[5];      // chars 0-4, UTF-16LE
+    uint8_t attr;           // always 0x0F
+    uint8_t type;           // always 0 for VFAT long names
+    uint8_t checksum;       // checksum of the short entry this belongs to
+    uint16_t name2[6];      // chars 5-10, UTF-16LE
+    uint16_t first_cluster; // always 0, unused
+    uint16_t name3[2];      // chars 11-12, UTF-16LE
+} __attribute__((packed));
+
 #define FAT_ATTR_VOLUME_LABEL 0x08
 #define FAT_ATTR_LONG_NAME 0x0F
+
+#define LFN_MAX_CHARS 256 // FAT's own cap is 255 characters; this is a safe round bound
+
+// Reconstructed long name, rebuilt fresh for each short entry — placed by ordinal since entries are stored in reverse
+static char lfn_buffer[LFN_MAX_CHARS];
+static int lfn_has_data = 0;
+static uint8_t lfn_checksum = 0;
+static int lfn_checksum_valid = 0;
 
 // Layout computed once by fat_init() from the BPB
 static uint32_t fat_start_lba;
@@ -57,6 +78,20 @@ static uint32_t data_start_lba;
 static uint16_t root_entry_count;
 static uint8_t sectors_per_cluster;
 static int fat_ready = 0;
+
+// One open file's read position, persisted across calls to fat_read
+struct open_file
+{
+    int in_use;
+    uint32_t file_size;
+    uint16_t current_cluster;
+    uint32_t cluster_offset; // byte offset within current_cluster
+    uint32_t file_offset;    // absolute byte offset within the file
+};
+
+#define MAX_OPEN_FILES 8
+#define FAT_FD_BASE 3 // 0/1/2 stay reserved for stdin/stdout/stderr
+static struct open_file open_files[MAX_OPEN_FILES];
 
 // Converts "readme.txt" into the padded 11-byte 8.3 directory format
 static void fat_name_to_83(const char *filename, uint8_t *out11)
@@ -121,6 +156,115 @@ static int fat_dir_entry_matches(const struct fat_dir_entry *entry, const uint8_
     return 1;
 }
 
+// Clears any in-progress long-name reconstruction — called between entries
+static void lfn_reset(void)
+{
+    for (int i = 0; i < LFN_MAX_CHARS; i++)
+    {
+        lfn_buffer[i] = '\0';
+    }
+    lfn_has_data = 0;
+    lfn_checksum_valid = 0;
+}
+
+// Folds 13 UTF-16LE characters from one LFN entry into lfn_buffer at its ordinal's position
+static void lfn_accumulate(const struct fat_lfn_entry *entry)
+{
+    int ordinal = entry->sequence & 0x1F; // mask off the "last entry" flag bit
+    int base = (ordinal - 1) * 13;
+
+    if (ordinal < 1 || base + 13 > LFN_MAX_CHARS - 1)
+    {
+        return; // malformed or oversized — ignore defensively rather than overrun the buffer
+    }
+
+    if (!lfn_has_data)
+    {
+        lfn_checksum = entry->checksum;
+        lfn_checksum_valid = 1;
+    }
+    else if (entry->checksum != lfn_checksum)
+    {
+        lfn_checksum_valid = 0; // entries disagree on which short name they belong to
+    }
+
+    uint16_t chars[13];
+    for (int i = 0; i < 5; i++)
+    {
+        chars[i] = entry->name1[i];
+    }
+    for (int i = 0; i < 6; i++)
+    {
+        chars[5 + i] = entry->name2[i];
+    }
+    for (int i = 0; i < 2; i++)
+    {
+        chars[11 + i] = entry->name3[i];
+    }
+
+    for (int i = 0; i < 13; i++)
+    {
+        uint16_t c = chars[i];
+        if (c == 0x0000)
+        {
+            lfn_buffer[base + i] = '\0';
+            break;
+        }
+        if (c == 0xFFFF)
+        {
+            break; // padding past the end of a shorter name
+        }
+        lfn_buffer[base + i] = (c < 128) ? (char)c : '?'; // no real Unicode support, ASCII only
+    }
+
+    lfn_has_data = 1;
+}
+
+// Computes the standard FAT short-name checksum, used to validate an LFN group
+static uint8_t fat_short_name_checksum(const struct fat_dir_entry *e)
+{
+    uint8_t name11[11];
+    for (int i = 0; i < 8; i++)
+    {
+        name11[i] = e->name[i];
+    }
+    for (int i = 0; i < 3; i++)
+    {
+        name11[8 + i] = e->ext[i];
+    }
+
+    uint8_t sum = 0;
+    for (int i = 0; i < 11; i++)
+    {
+        sum = (uint8_t)(((sum & 1) ? 0x80 : 0) + (sum >> 1) + name11[i]);
+    }
+    return sum;
+}
+
+// Case-insensitive comparison, for matching against a reconstructed long name
+static int names_equal_ci(const char *a, const char *b)
+{
+    while (*a != '\0' && *b != '\0')
+    {
+        char ca = *a, cb = *b;
+        if (ca >= 'a' && ca <= 'z')
+        {
+            ca = (char)(ca - 32);
+        }
+        if (cb >= 'a' && cb <= 'z')
+        {
+            cb = (char)(cb - 32);
+        }
+        if (ca != cb)
+        {
+            return 0;
+        }
+        a++;
+        b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
 int fat_init(void)
 {
     uint8_t boot[ATA_SECTOR_SIZE];
@@ -171,11 +315,16 @@ int fat_init(void)
     return 0;
 }
 
-// Scans the root directory for a matching 8.3 name
-static int fat_find_entry(const uint8_t *name83, struct fat_dir_entry *out_entry)
+// Scans the root directory for filename, checking both the reconstructed long name and the 8.3 short name
+static int fat_find_entry(const char *filename, struct fat_dir_entry *out_entry)
 {
+    uint8_t name83[11];
+    fat_name_to_83(filename, name83);
+
     uint8_t sector_buf[ATA_SECTOR_SIZE];
     int entries_per_sector = ATA_SECTOR_SIZE / sizeof(struct fat_dir_entry);
+
+    lfn_reset();
 
     for (uint32_t s = 0; s < root_dir_sectors; s++)
     {
@@ -196,18 +345,31 @@ static int fat_find_entry(const uint8_t *name83, struct fat_dir_entry *out_entry
             }
             if (e->name[0] == 0xE5)
             {
-                continue; // deleted entry
+                lfn_reset(); // a deleted entry breaks any LFN group pointing at it
+                continue;
             }
             if (e->attr == FAT_ATTR_LONG_NAME)
             {
-                continue; // long filename entry, unsupported
+                lfn_accumulate((const struct fat_lfn_entry *)e);
+                continue;
             }
             if (e->attr & FAT_ATTR_VOLUME_LABEL)
             {
-                continue; // volume label, not a file
+                lfn_reset();
+                continue;
             }
 
-            if (fat_dir_entry_matches(e, name83))
+            int matched = fat_dir_entry_matches(e, name83);
+
+            if (!matched && lfn_has_data && lfn_checksum_valid &&
+                fat_short_name_checksum(e) == lfn_checksum)
+            {
+                matched = names_equal_ci(filename, lfn_buffer);
+            }
+
+            lfn_reset();
+
+            if (matched)
             {
                 *out_entry = *e;
                 return 0;
@@ -243,11 +405,8 @@ int fat_read_file(const char *filename, uint8_t *buffer, uint32_t buffer_size)
         return -1;
     }
 
-    uint8_t name83[11];
-    fat_name_to_83(filename, name83);
-
     struct fat_dir_entry entry;
-    if (fat_find_entry(name83, &entry) != 0)
+    if (fat_find_entry(filename, &entry) != 0)
     {
         terminal_writestring("FAT: file not found: ");
         terminal_writestring(filename);
@@ -291,4 +450,106 @@ int fat_read_file(const char *filename, uint8_t *buffer, uint32_t buffer_size)
     }
 
     return (int)bytes_read;
+}
+
+// Opens filename for reading, returns a real fd (>= FAT_FD_BASE) or -1
+int fat_open(const char *filename)
+{
+    if (!fat_ready)
+    {
+        return -1;
+    }
+
+    struct fat_dir_entry entry;
+    if (fat_find_entry(filename, &entry) != 0)
+    {
+        return -1;
+    }
+
+    for (int i = 0; i < MAX_OPEN_FILES; i++)
+    {
+        if (!open_files[i].in_use)
+        {
+            open_files[i].in_use = 1;
+            open_files[i].file_size = entry.file_size;
+            open_files[i].current_cluster = entry.first_cluster_low;
+            open_files[i].cluster_offset = 0;
+            open_files[i].file_offset = 0;
+            return i + FAT_FD_BASE;
+        }
+    }
+
+    return -1; // no free descriptor slots
+}
+
+// Reads up to len bytes from fd, resuming from the last position across calls, unlike fat_read_file
+int fat_read(int fd, uint8_t *buffer, uint32_t len)
+{
+    int index = fd - FAT_FD_BASE;
+    if (index < 0 || index >= MAX_OPEN_FILES || !open_files[index].in_use)
+    {
+        return -1;
+    }
+
+    struct open_file *f = &open_files[index];
+    uint32_t cluster_size = (uint32_t)sectors_per_cluster * ATA_SECTOR_SIZE;
+    uint8_t sector_buf[ATA_SECTOR_SIZE];
+    uint32_t bytes_read = 0;
+
+    while (bytes_read < len && f->file_offset < f->file_size &&
+           f->current_cluster >= 2 && f->current_cluster < 0xFFF8)
+    {
+        uint32_t sector_in_cluster = f->cluster_offset / ATA_SECTOR_SIZE;
+        uint32_t offset_in_sector = f->cluster_offset % ATA_SECTOR_SIZE;
+        uint32_t cluster_lba = data_start_lba + (uint32_t)(f->current_cluster - 2) * sectors_per_cluster;
+
+        if (ata_read_sector(cluster_lba + sector_in_cluster, sector_buf) != 0)
+        {
+            return (int)bytes_read; // return whatever succeeded before the error
+        }
+
+        uint32_t available_in_sector = ATA_SECTOR_SIZE - offset_in_sector;
+        uint32_t remaining_in_file = f->file_size - f->file_offset;
+        uint32_t remaining_requested = len - bytes_read;
+
+        uint32_t to_copy = available_in_sector;
+        if (remaining_in_file < to_copy)
+        {
+            to_copy = remaining_in_file;
+        }
+        if (remaining_requested < to_copy)
+        {
+            to_copy = remaining_requested;
+        }
+
+        for (uint32_t i = 0; i < to_copy; i++)
+        {
+            buffer[bytes_read + i] = sector_buf[offset_in_sector + i];
+        }
+
+        bytes_read += to_copy;
+        f->file_offset += to_copy;
+        f->cluster_offset += to_copy;
+
+        if (f->cluster_offset >= cluster_size)
+        {
+            f->current_cluster = fat_get_next_cluster(f->current_cluster);
+            f->cluster_offset = 0;
+        }
+    }
+
+    return (int)bytes_read; // 0 means EOF, distinct from -1 (invalid fd)
+}
+
+// Closes a descriptor opened by fat_open — leaked, not auto-closed, if a task exits without calling this
+int fat_close(int fd)
+{
+    int index = fd - FAT_FD_BASE;
+    if (index < 0 || index >= MAX_OPEN_FILES || !open_files[index].in_use)
+    {
+        return -1;
+    }
+
+    open_files[index].in_use = 0;
+    return 0;
 }
