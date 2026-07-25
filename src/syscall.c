@@ -22,6 +22,7 @@ struct registers
 #define SYSCALL_READ 2
 #define SYSCALL_OPEN 3
 #define SYSCALL_CLOSE 4
+#define SYSCALL_LIST 5
 
 void syscall_handler(struct registers *regs)
 {
@@ -80,6 +81,24 @@ void syscall_handler(struct registers *regs)
     {
         int fd = (int)regs->ebx;
         regs->eax = (uint32_t)fat_close(fd);
+        break;
+    }
+
+    case SYSCALL_LIST:
+    {
+        int index = (int)regs->ebx;
+        char *name_buf = (char *)regs->ecx;
+        uint32_t buf_size = regs->edx;
+        uint32_t file_size;
+
+        if (fat_list_entry(index, name_buf, buf_size, &file_size) == 0)
+        {
+            regs->eax = file_size;
+        }
+        else
+        {
+            regs->eax = (uint32_t)-1;
+        }
         break;
     }
 

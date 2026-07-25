@@ -39,6 +39,9 @@ void schedule(void);
 // Ends the current task and switches to the next runnable one
 void task_exit(void);
 
+// Returns the ID of the task currently running
+int task_current_id(void);
+
 // Frees stack memory for any task that has exited
 void task_reap(void);
 

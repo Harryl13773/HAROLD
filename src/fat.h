@@ -18,4 +18,7 @@ int fat_read(int fd, uint8_t *buffer, uint32_t len);
 // Closes a descriptor opened by fat_open; returns 0 or -1 on an invalid fd
 int fat_close(int fd);
 
+// Gets the index-th root directory entry's name and size; returns 0, or -1 past the last entry
+int fat_list_entry(int index, char *name_out, uint32_t name_out_size, uint32_t *size_out);
+
 #endif

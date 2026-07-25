@@ -553,3 +553,113 @@ int fat_close(int fd)
     open_files[index].in_use = 0;
     return 0;
 }
+
+// Bounded copy that always null-terminates, unlike strncpy
+static void fat_copy_string(char *dest, const char *src, uint32_t dest_size)
+{
+    uint32_t i = 0;
+    while (src[i] != '\0' && i < dest_size - 1)
+    {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = '\0';
+}
+
+// Converts a raw 8.3 entry into a readable "NAME.EXT" string, trimming FAT's space-padding
+static void fat_short_name_to_display(const struct fat_dir_entry *e, char *out, uint32_t out_size)
+{
+    uint32_t pos = 0;
+
+    for (int i = 0; i < 8 && e->name[i] != ' ' && pos < out_size - 1; i++)
+    {
+        out[pos++] = (char)e->name[i];
+    }
+
+    if (e->ext[0] != ' ' && pos < out_size - 1)
+    {
+        out[pos++] = '.';
+        for (int i = 0; i < 3 && e->ext[i] != ' ' && pos < out_size - 1; i++)
+        {
+            out[pos++] = (char)e->ext[i];
+        }
+    }
+
+    out[pos] = '\0';
+}
+
+// Returns the index-th real entry in the root directory (0-based, deleted/LFN/volume-label
+// entries don't count), preferring its long name when present. No locking around the shared
+// LFN buffer here — currently safe only because the shell serializes filesystem-using tasks.
+int fat_list_entry(int index, char *name_out, uint32_t name_out_size, uint32_t *size_out)
+{
+    if (!fat_ready)
+    {
+        return -1;
+    }
+
+    uint8_t sector_buf[ATA_SECTOR_SIZE];
+    int entries_per_sector = ATA_SECTOR_SIZE / sizeof(struct fat_dir_entry);
+    int seen = 0;
+
+    lfn_reset();
+
+    for (uint32_t s = 0; s < root_dir_sectors; s++)
+    {
+        if (ata_read_sector(root_dir_start_lba + s, sector_buf) != 0)
+        {
+            return -1;
+        }
+
+        struct fat_dir_entry *entries = (struct fat_dir_entry *)sector_buf;
+
+        for (int i = 0; i < entries_per_sector; i++)
+        {
+            struct fat_dir_entry *e = &entries[i];
+
+            if (e->name[0] == 0x00)
+            {
+                return -1; // end of directory — index was out of range
+            }
+            if (e->name[0] == 0xE5)
+            {
+                lfn_reset();
+                continue;
+            }
+            if (e->attr == FAT_ATTR_LONG_NAME)
+            {
+                lfn_accumulate((const struct fat_lfn_entry *)e);
+                continue;
+            }
+            if (e->attr & FAT_ATTR_VOLUME_LABEL)
+            {
+                lfn_reset();
+                continue;
+            }
+
+            if (seen == index)
+            {
+                int use_long_name = lfn_has_data && lfn_checksum_valid &&
+                                    fat_short_name_checksum(e) == lfn_checksum;
+
+                if (use_long_name)
+                {
+                    fat_copy_string(name_out, lfn_buffer, name_out_size);
+                }
+                else
+                {
+                    fat_short_name_to_display(e, name_out, name_out_size);
+                }
+
+                *size_out = e->file_size;
+                lfn_reset();
+                return 0;
+            }
+
+            seen++;
+            lfn_reset();
+        }
+    }
+
+    return -1;
+}

@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "idt.h"
 #include "isr.h"
+#include "task.h"
 
 extern void isr0(void);
 extern void isr1(void);
@@ -54,11 +55,27 @@ static const char *exception_messages[32] =
         "Reserved", "Reserved", "Reserved", "Reserved",
         "Reserved", "Reserved", "Reserved", "Reserved"};
 
+#define VGA_COLS 80
+
+// Blanks an entire row so old scrolled text can't bleed through past what we write
+static void clear_row(int row)
+{
+    volatile uint16_t *video_memory = (uint16_t *)0xB8000;
+    int offset = row * VGA_COLS;
+
+    for (int i = 0; i < VGA_COLS; i++)
+    {
+        video_memory[offset + i] = (uint16_t)' ' | 0x4F00; // white on red
+    }
+}
+
 // Writes a string directly to VGA memory at a given row
 static void print_at(const char *str, int row)
 {
     volatile uint16_t *video_memory = (uint16_t *)0xB8000;
-    int offset = row * 80;
+    int offset = row * VGA_COLS;
+
+    clear_row(row);
 
     for (int i = 0; str[i] != '\0'; i++)
     {
@@ -71,7 +88,9 @@ static void print_hex_at(uint32_t value, int row)
 {
     volatile uint16_t *video_memory = (uint16_t *)0xB8000;
     char hex_chars[] = "0123456789ABCDEF";
-    int offset = row * 80;
+    int offset = row * VGA_COLS;
+
+    clear_row(row);
 
     video_memory[offset] = (uint16_t)'0' | 0x4F00;
     video_memory[offset + 1] = (uint16_t)'x' | 0x4F00;
@@ -90,7 +109,7 @@ static inline uint32_t read_cr2(void)
     return value;
 }
 
-// Called by every exception stub — reports the fault, then halts
+// Called by every exception stub — reports the fault, then isolates or halts depending on CPL
 void fault_handler(struct registers *regs)
 {
     print_at("EXCEPTION:", 2);
@@ -101,6 +120,15 @@ void fault_handler(struct registers *regs)
         print_at("Faulting address:", 4);
         print_hex_at(read_cr2(), 5);
     }
+
+    if ((regs->cs & 0x3) == 3) // CPL 3 — the fault came from a ring 3 task, not the kernel itself
+    {
+        print_at("Ring 3 fault - terminating task:", 6);
+        print_hex_at((uint32_t)task_current_id(), 7);
+        task_exit(); // never returns — kills this task and switches to another
+    }
+
+    print_at("Kernel-mode fault - halting", 6);
 
     for (;;)
     {

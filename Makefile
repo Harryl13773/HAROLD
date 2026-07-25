@@ -54,6 +54,18 @@ userspace/cat.elf: userspace/cat.c userspace/libc.c userspace/libc.h userspace/l
 	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
 	$(LD) -m elf_i386 -T userspace/linker.ld userspace/cat.o userspace/libc.o -o userspace/cat.elf
 
+# Directory listing — exercises the new LIST syscall
+userspace/ls.elf: userspace/ls.c userspace/libc.c userspace/libc.h userspace/linker.ld
+	$(CC) $(USERCFLAGS) -c userspace/ls.c -o userspace/ls.o
+	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
+	$(LD) -m elf_i386 -T userspace/linker.ld userspace/ls.o userspace/libc.o -o userspace/ls.elf
+
+# Deliberately divides by zero — proves fault_handler isolates ring 3 crashes instead of halting
+userspace/crash.elf: userspace/crash.c userspace/libc.c userspace/libc.h userspace/linker.ld
+	$(CC) $(USERCFLAGS) -c userspace/crash.c -o userspace/crash.o
+	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
+	$(LD) -m elf_i386 -T userspace/linker.ld userspace/crash.o userspace/libc.o -o userspace/crash.elf
+
 # Run with QEMU's built-in multiboot loader (the shortcut you've been using)
 run: kernel.bin disk.img
 	qemu-system-x86_64 -kernel kernel.bin -drive file=disk.img,format=raw,if=ide
@@ -63,7 +75,7 @@ run-iso: iso disk.img
 	qemu-system-x86_64 -cdrom harold.iso -drive file=disk.img,format=raw,if=ide
 
 clean:
-	rm -f *.o kernel.bin harold.iso userspace/test.o userspace/inference.o userspace/cat.o userspace/libc.o userspace/test.elf userspace/inference.elf userspace/cat.elf
+	rm -f *.o kernel.bin harold.iso userspace/test.o userspace/inference.o userspace/cat.o userspace/ls.o userspace/crash.o userspace/libc.o userspace/test.elf userspace/inference.elf userspace/cat.elf userspace/ls.elf userspace/crash.elf
 	rm -rf isodir
 
 .PHONY: all run run-iso iso clean

@@ -28,6 +28,13 @@ int close(int fd)
     return result;
 }
 
+int listdir(int index, char *name_buf, unsigned int buf_size)
+{
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(5), "b"(index), "c"(name_buf), "d"(buf_size));
+    return result;
+}
+
 void exit(void)
 {
     __asm__ volatile("int $0x80" : : "a"(1));

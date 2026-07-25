@@ -13,6 +13,9 @@ int open(const char *filename);
 // Closes a descriptor opened by open(); returns 0 or -1
 int close(int fd);
 
+// Gets the index-th file's name (into name_buf) and returns its size, or -1 past the last file
+int listdir(int index, char *name_buf, unsigned int buf_size);
+
 // Terminates the calling program
 void exit(void);
 
