@@ -588,9 +588,7 @@ static void fat_short_name_to_display(const struct fat_dir_entry *e, char *out, 
     out[pos] = '\0';
 }
 
-// Returns the index-th real entry in the root directory (0-based, deleted/LFN/volume-label
-// entries don't count), preferring its long name when present. No locking around the shared
-// LFN buffer here — currently safe only because the shell serializes filesystem-using tasks.
+// Returns the index-th real root directory entry, preferring its long name; unsynchronized LFN buffer is safe only because the shell serializes filesystem tasks
 int fat_list_entry(int index, char *name_out, uint32_t name_out_size, uint32_t *size_out)
 {
     if (!fat_ready)

@@ -4,6 +4,7 @@
 #include "task.h"
 #include "keyboard.h"
 #include "fat.h"
+#include "tcp.h"
 #include "syscall.h"
 
 extern void syscall_stub(void);
@@ -23,6 +24,10 @@ struct registers
 #define SYSCALL_OPEN 3
 #define SYSCALL_CLOSE 4
 #define SYSCALL_LIST 5
+#define SYSCALL_SOCKET_ACCEPT 6
+#define SYSCALL_SOCKET_RECV 7
+#define SYSCALL_SOCKET_SEND 8
+#define SYSCALL_SOCKET_CLOSE 9
 
 void syscall_handler(struct registers *regs)
 {
@@ -99,6 +104,35 @@ void syscall_handler(struct registers *regs)
         {
             regs->eax = (uint32_t)-1;
         }
+        break;
+    }
+
+    case SYSCALL_SOCKET_ACCEPT:
+        regs->eax = (uint32_t)tcp_socket_accept();
+        break;
+
+    case SYSCALL_SOCKET_RECV:
+    {
+        int sockfd = (int)regs->ebx;
+        uint8_t *buf = (uint8_t *)regs->ecx;
+        uint32_t max_len = regs->edx;
+        regs->eax = (uint32_t)tcp_socket_recv(sockfd, buf, max_len);
+        break;
+    }
+
+    case SYSCALL_SOCKET_SEND:
+    {
+        int sockfd = (int)regs->ebx;
+        const uint8_t *buf = (const uint8_t *)regs->ecx;
+        uint32_t len = regs->edx;
+        regs->eax = (uint32_t)tcp_socket_send(sockfd, buf, len);
+        break;
+    }
+
+    case SYSCALL_SOCKET_CLOSE:
+    {
+        int sockfd = (int)regs->ebx;
+        regs->eax = (uint32_t)tcp_socket_close(sockfd);
         break;
     }
 

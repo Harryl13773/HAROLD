@@ -4,8 +4,7 @@ section .text
 
 extern irq_handler          ; shared C dispatcher for all hardware IRQs
 
-; Hardware IRQs never push their own error code, so we push a dummy 0
-; %1 = raw IRQ number (0-15), %2 = the IDT vector it lands on (32-47)
+; Pushes a dummy error code (hardware IRQs don't push one); %1=IRQ number, %2=IDT vector
 %macro IRQ 2
 global irq%1
 irq%1:

@@ -16,6 +16,18 @@ int close(int fd);
 // Gets the index-th file's name (into name_buf) and returns its size, or -1 past the last file
 int listdir(int index, char *name_buf, unsigned int buf_size);
 
+// Blocks until a client connects, then returns a socket descriptor for it
+int socket_accept(void);
+
+// Blocks until data arrives or the connection closes; returns byte count, or 0 at a clean close
+int socket_recv(int sockfd, char *buf, unsigned int max_len);
+
+// Sends len bytes on an open socket; returns bytes sent, or -1
+int socket_send(int sockfd, const char *buf, unsigned int len);
+
+// Initiates a clean close of the socket; returns 0, or -1
+int socket_close(int sockfd);
+
 // Terminates the calling program
 void exit(void);
 

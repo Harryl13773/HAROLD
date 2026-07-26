@@ -68,9 +68,7 @@ static void split_block(struct block_header *block, size_t size)
     block->size = size;
 }
 
-// First-fit search through the block list for a free block big enough for size.
-// Interrupts stay disabled for the walk — a preempted mid-split heap would
-// corrupt the list for whichever task runs next and also touches it.
+// First-fit search with interrupts disabled — a preempted mid-split heap would corrupt the list
 void *kmalloc(size_t size)
 {
     if (!heap_ready || size == 0)

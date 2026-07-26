@@ -60,22 +60,33 @@ userspace/ls.elf: userspace/ls.c userspace/libc.c userspace/libc.h userspace/lin
 	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
 	$(LD) -m elf_i386 -T userspace/linker.ld userspace/ls.o userspace/libc.o -o userspace/ls.elf
 
-# Deliberately divides by zero — proves fault_handler isolates ring 3 crashes instead of halting
+# Deliberately writes to unmapped memory — proves fault_handler isolates ring 3 crashes instead of halting
 userspace/crash.elf: userspace/crash.c userspace/libc.c userspace/libc.h userspace/linker.ld
 	$(CC) $(USERCFLAGS) -c userspace/crash.c -o userspace/crash.o
 	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
 	$(LD) -m elf_i386 -T userspace/linker.ld userspace/crash.o userspace/libc.o -o userspace/crash.elf
 
+# A real userspace TCP echo server, using nothing but the new socket syscalls — the proof of the sockets milestone
+userspace/netecho.elf: userspace/netecho.c userspace/libc.c userspace/libc.h userspace/linker.ld
+	$(CC) $(USERCFLAGS) -c userspace/netecho.c -o userspace/netecho.o
+	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
+	$(LD) -m elf_i386 -T userspace/linker.ld userspace/netecho.o userspace/libc.o -o userspace/netecho.elf
+
 # Run with QEMU's built-in multiboot loader (the shortcut you've been using)
 run: kernel.bin disk.img
-	qemu-system-x86_64 -kernel kernel.bin -drive file=disk.img,format=raw,if=ide
+	qemu-system-x86_64 -kernel kernel.bin -drive file=disk.img,format=raw,if=ide -netdev user,id=n0 -device rtl8139,netdev=n0 -object filter-dump,id=f0,netdev=n0,file=harold_net.pcap
 
 # Run through the real GRUB + real ISO path — the closer proxy for real hardware
 run-iso: iso disk.img
-	qemu-system-x86_64 -cdrom harold.iso -drive file=disk.img,format=raw,if=ide
+	qemu-system-x86_64 -cdrom harold.iso -drive file=disk.img,format=raw,if=ide -netdev user,id=n0 -device rtl8139,netdev=n0 -object filter-dump,id=f0,netdev=n0,file=harold_net.pcap
+
+# Real bidirectional host<->guest networking via macOS's vmnet framework — needs sudo, unlike run/run-iso.
+# No fixed subnet requested here on purpose — see the status doc for how to discover what macOS assigns.
+run-vmnet: kernel.bin disk.img
+	sudo qemu-system-x86_64 -kernel kernel.bin -drive file=disk.img,format=raw,if=ide -netdev vmnet-host,id=n0 -device rtl8139,netdev=n0 -object filter-dump,id=f0,netdev=n0,file=harold_net.pcap
 
 clean:
-	rm -f *.o kernel.bin harold.iso userspace/test.o userspace/inference.o userspace/cat.o userspace/ls.o userspace/crash.o userspace/libc.o userspace/test.elf userspace/inference.elf userspace/cat.elf userspace/ls.elf userspace/crash.elf
+	rm -f *.o kernel.bin harold.iso userspace/test.o userspace/inference.o userspace/cat.o userspace/ls.o userspace/crash.o userspace/netecho.o userspace/libc.o userspace/test.elf userspace/inference.elf userspace/cat.elf userspace/ls.elf userspace/crash.elf userspace/netecho.elf
 	rm -rf isodir
 
 .PHONY: all run run-iso iso clean

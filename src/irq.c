@@ -42,8 +42,7 @@ void irq_handler(struct registers *regs)
 {
     int irq = regs->int_no - 32;
 
-    // Sent first, deliberately — a handler that triggers a task switch may
-    // never "return" to this point, so the PIC must be acknowledged before that risk
+    // Sent first — a handler that triggers a task switch may never return to this point
     if (irq >= 8)
     {
         outb(0xA0, 0x20);

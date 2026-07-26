@@ -35,6 +35,34 @@ int listdir(int index, char *name_buf, unsigned int buf_size)
     return result;
 }
 
+int socket_accept(void)
+{
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(6));
+    return result;
+}
+
+int socket_recv(int sockfd, char *buf, unsigned int max_len)
+{
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(7), "b"(sockfd), "c"(buf), "d"(max_len));
+    return result;
+}
+
+int socket_send(int sockfd, const char *buf, unsigned int len)
+{
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(8), "b"(sockfd), "c"(buf), "d"(len));
+    return result;
+}
+
+int socket_close(int sockfd)
+{
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(9), "b"(sockfd));
+    return result;
+}
+
 void exit(void)
 {
     __asm__ volatile("int $0x80" : : "a"(1));

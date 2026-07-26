@@ -3,8 +3,7 @@
 
 #include <stdint.h>
 
-// Layout of the structure GRUB passes us, matching the Multiboot spec
-// Only the fields we actually need right now — more exist, unused for now
+// Layout of the structure GRUB passes us, matching the Multiboot spec — only the fields we actually need so far
 struct multiboot_info
 {
     uint32_t flags;

@@ -18,6 +18,11 @@
 #include "tss.h"
 #include "syscall.h"
 #include "shell.h"
+#include "pci.h"
+#include "rtl8139.h"
+#include "arp.h"
+#include "ip.h"
+#include "net.h"
 
 extern uint32_t kernel_end;
 
@@ -36,6 +41,25 @@ void kernel_main(uint32_t multiboot_addr)
 
     // Screen ready before anything writes to it
     terminal_initialize();
+
+    // Find what hardware actually exists before touching any of it — the NIC will show up here
+    pci_scan();
+
+    // Now that we know the NIC exists on PCI, bring it up and read its real MAC address
+    rtl8139_init();
+
+    if (rtl8139_is_present())
+    {
+        // Resolved twice on purpose — the first is a real request/reply, the second should hit the ARP cache instead
+        uint8_t bridge_ip[4] = {192, 168, 18, 1};
+        uint8_t bridge_mac[6];
+        arp_resolve(bridge_ip, bridge_mac);
+        arp_resolve(bridge_ip, bridge_mac);
+
+        // 192.168.18.50 matches the vmnet-host subnet above — update if switching to SLIRP or vmnet-shared
+        uint8_t our_ip[4] = {192, 168, 18, 50};
+        ip_set_address(our_ip);
+    }
 
     // Detect the disk, prove we can read from it, then mount the filesystem on it
     ata_init();
@@ -94,6 +118,11 @@ void kernel_main(uint32_t multiboot_addr)
     // Tasking depends on the heap, so it comes after
     tasking_init();
     task_create(shell_task);
+
+    if (rtl8139_is_present())
+    {
+        task_create(net_task); // keeps answering ARP/ping in the background, independent of the shell
+    }
 
     // Only now is every subsystem ready for interrupts to actually fire
     __asm__ volatile("sti");

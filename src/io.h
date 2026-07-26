@@ -31,6 +31,20 @@ static inline void outw(uint16_t port, uint16_t data)
     __asm__ volatile("outw %0, %1" : : "a"(data), "Nd"(port));
 }
 
+// Reads a 32-bit dword from the given I/O port
+static inline uint32_t inl(uint16_t port)
+{
+    uint32_t result;
+    __asm__ volatile("inl %1, %0" : "=a"(result) : "Nd"(port));
+    return result;
+}
+
+// Writes a 32-bit dword to the given I/O port
+static inline void outl(uint16_t port, uint32_t data)
+{
+    __asm__ volatile("outl %0, %1" : : "a"(data), "Nd"(port));
+}
+
 // Disables interrupts and returns the prior EFLAGS, for protecting a critical section
 static inline uint32_t save_and_disable_interrupts(void)
 {

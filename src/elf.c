@@ -110,9 +110,7 @@ int elf_load_and_run(const char *filename)
             continue;
         }
 
-        // No bounds/collision checking against the kernel or heap here —
-        // safe only because the test program's link address is chosen to
-        // sit in known-free space. Real isolation needs per-process paging.
+        // No bounds/collision checking — safe only because the test program's link address sits in known-free space
         uint8_t *dest = (uint8_t *)ph->p_vaddr;
         uint8_t *src = file_buf + ph->p_offset;
 

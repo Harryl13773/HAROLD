@@ -6,8 +6,7 @@ global task_launch
 
 extern task_exit  ; C function — the safety net if a task's entry function ever returns
 
-; void switch_task(uint32_t *old_esp, uint32_t new_esp)
-; Saves the running task's callee-saved registers and stack pointer, then resumes the next task
+; switch_task(uint32_t *old_esp, uint32_t new_esp) — saves callee-saved regs, then resumes the next task
 switch_task:
     push ebp
     push ebx
