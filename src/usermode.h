@@ -1,3 +1,5 @@
+// Public interface for entering ring 3 with a fresh user stack
+
 #ifndef USERMODE_H
 #define USERMODE_H
 

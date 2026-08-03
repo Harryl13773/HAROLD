@@ -1,8 +1,13 @@
+// ELF32 loader: parses a static executable, maps its segments into a fresh address space, and enters ring 3
+
 #include <stdint.h>
 #include "fat.h"
 #include "heap.h"
 #include "terminal.h"
 #include "usermode.h"
+#include "paging.h"
+#include "pmm.h"
+#include "task.h"
 #include "elf.h"
 
 // ELF32 file header — byte-for-byte per the spec, 52 bytes
@@ -110,7 +115,60 @@ int elf_load_and_run(const char *filename)
             continue;
         }
 
-        // No bounds/collision checking — safe only because the test program's link address sits in known-free space
+        // Each process gets its own private page table for this segment's 4MB region, pre-populated
+        // with the kernel's own mappings (so kernel/heap addresses stay correctly accessible), with
+        // fresh, genuinely private physical frames mapped in for the segment's own address range —
+        // this is what makes two processes at the same virtual address (0x300000 for all of them)
+        // actually backed by different physical memory, rather than secretly sharing it
+        uint32_t *dir = task_get_current_page_directory();
+        uint32_t *table = paging_get_or_create_user_table(dir, ph->p_vaddr);
+        if (table == NULL)
+        {
+            terminal_writestring("ELF: could not set up private memory for this process\n");
+            kfree(file_buf);
+            return -1;
+        }
+
+        uint32_t start_page = ph->p_vaddr & ~(PAGE_SIZE - 1);
+        uint32_t end_addr = ph->p_vaddr + ph->p_memsz;
+        uint32_t end_page = (end_addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+        terminal_writestring("ELF: segment vaddr=");
+        terminal_print_hex(ph->p_vaddr);
+        terminal_writestring(" memsz=");
+        terminal_print_hex(ph->p_memsz);
+        terminal_writestring(" pages=");
+        terminal_print_dec((end_page - start_page) / PAGE_SIZE);
+        terminal_writestring("\n");
+
+        for (uint32_t page_addr = start_page; page_addr < end_page; page_addr += PAGE_SIZE)
+        {
+            uint32_t frame = pmm_alloc_frame();
+            if (frame == 0)
+            {
+                terminal_writestring("ELF: out of memory mapping process pages\n");
+                kfree(file_buf);
+                return -1;
+            }
+
+            // pmm_free_frame only marks a frame available again — it never clears its contents,
+            // so a reused frame would otherwise still carry whatever the previous process left
+            // there. Zeroing here, before this process ever touches it, is what actually prevents
+            // one process's data from leaking into another's through a recycled physical frame.
+            uint8_t *frame_ptr = (uint8_t *)frame;
+            for (uint32_t z = 0; z < PAGE_SIZE; z++)
+            {
+                frame_ptr[z] = 0;
+            }
+
+            paging_map_user_page(table, page_addr, frame);
+        }
+
+        // The mappings above only take effect once the CPU's TLB is flushed — reloading CR3 does
+        // that as a side effect. Without this, the segment copy below could still hit stale,
+        // cached translations from before this task's private table existed.
+        paging_switch_directory(dir);
+
         uint8_t *dest = (uint8_t *)ph->p_vaddr;
         uint8_t *src = file_buf + ph->p_offset;
 

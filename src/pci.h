@@ -1,3 +1,5 @@
+// Public interface for PCI config space access and device scanning
+
 #ifndef PCI_H
 #define PCI_H
 

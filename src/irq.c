@@ -1,3 +1,5 @@
+// IRQ dispatch: remapped PIC interrupt stubs, PIC EOI acknowledgment, and handler registration
+
 #include <stdint.h>
 #include "idt.h"
 #include "io.h"

@@ -1,3 +1,5 @@
+// Network polling loop: pulls frames off the NIC and dispatches them to ARP/IP, runs as a background task
+
 #include <stdint.h>
 #include "rtl8139.h"
 #include "arp.h"

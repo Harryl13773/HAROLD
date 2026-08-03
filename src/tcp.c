@@ -1,3 +1,5 @@
+// Minimal TCP: per-connection state machine (SYN/handshake, data, FIN close), retransmit timer, and socket calls
+
 #include <stdint.h>
 #include "terminal.h"
 #include "ip.h"

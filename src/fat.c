@@ -1,3 +1,5 @@
+// FAT16 filesystem driver: boot sector parsing, directory/LFN traversal, and file read/write
+
 #include <stdint.h>
 #include "ata.h"
 #include "terminal.h"
@@ -77,9 +79,11 @@ static uint32_t root_dir_sectors;
 static uint32_t data_start_lba;
 static uint16_t root_entry_count;
 static uint8_t sectors_per_cluster;
+static uint8_t num_fats;
+static uint32_t fat_size_sectors;
 static int fat_ready = 0;
 
-// One open file's read position, persisted across calls to fat_read
+// One open file's read (or write) position, persisted across calls
 struct open_file
 {
     int in_use;
@@ -87,6 +91,9 @@ struct open_file
     uint16_t current_cluster;
     uint32_t cluster_offset; // byte offset within current_cluster
     uint32_t file_offset;    // absolute byte offset within the file
+    int writable;
+    uint32_t dir_entry_sector; // where this file's directory entry lives — write mode updates it directly
+    uint32_t dir_entry_offset; // index of the entry within that sector
 };
 
 #define MAX_OPEN_FILES 8
@@ -298,6 +305,8 @@ int fat_init(void)
 
     sectors_per_cluster = bpb->sectors_per_cluster;
     root_entry_count = bpb->root_entry_count;
+    num_fats = bpb->num_fats;
+    fat_size_sectors = bpb->fat_size_16;
 
     fat_start_lba = bpb->reserved_sector_count;
     root_dir_start_lba = fat_start_lba + (uint32_t)bpb->num_fats * bpb->fat_size_16;
@@ -315,8 +324,10 @@ int fat_init(void)
     return 0;
 }
 
-// Scans the root directory for filename, checking both the reconstructed long name and the 8.3 short name
-static int fat_find_entry(const char *filename, struct fat_dir_entry *out_entry)
+// Scans the root directory for filename, checking both the reconstructed long name and the 8.3 short
+// name, and reports exactly where the match lives on disk (sector + index within that sector) —
+// overwrite/append need this; plain reads only need the entry's contents, via the wrapper below
+static int fat_find_entry_location(const char *filename, uint32_t *out_sector, uint32_t *out_offset, struct fat_dir_entry *out_entry)
 {
     uint8_t name83[11];
     fat_name_to_83(filename, name83);
@@ -371,6 +382,8 @@ static int fat_find_entry(const char *filename, struct fat_dir_entry *out_entry)
 
             if (matched)
             {
+                *out_sector = root_dir_start_lba + s;
+                *out_offset = (uint32_t)i;
                 *out_entry = *e;
                 return 0;
             }
@@ -378,6 +391,13 @@ static int fat_find_entry(const char *filename, struct fat_dir_entry *out_entry)
     }
 
     return -1;
+}
+
+// Convenience wrapper for callers that only need an entry's contents, not where it lives on disk
+static int fat_find_entry(const char *filename, struct fat_dir_entry *out_entry)
+{
+    uint32_t sector, offset;
+    return fat_find_entry_location(filename, &sector, &offset, out_entry);
 }
 
 // Looks up the next cluster in a chain via the FAT
@@ -475,6 +495,7 @@ int fat_open(const char *filename)
             open_files[i].current_cluster = entry.first_cluster_low;
             open_files[i].cluster_offset = 0;
             open_files[i].file_offset = 0;
+            open_files[i].writable = 0;
             return i + FAT_FD_BASE;
         }
     }
@@ -554,6 +575,323 @@ int fat_close(int fd)
     return 0;
 }
 
+// Writes a 16-bit FAT entry at the given cluster index, updating every FAT copy so they stay in sync
+static void fat_set_cluster_entry(uint16_t cluster, uint16_t value)
+{
+    uint32_t fat_offset = (uint32_t)cluster * 2;
+    uint32_t sector_offset = fat_offset / ATA_SECTOR_SIZE;
+    uint32_t offset_in_sector = fat_offset % ATA_SECTOR_SIZE;
+
+    uint8_t sector_buf[ATA_SECTOR_SIZE];
+
+    for (uint8_t copy = 0; copy < num_fats; copy++)
+    {
+        uint32_t sector = fat_start_lba + (uint32_t)copy * fat_size_sectors + sector_offset;
+        if (ata_read_sector(sector, sector_buf) != 0)
+        {
+            continue; // best-effort — a read failure here shouldn't abort the whole write
+        }
+        uint16_t *entries = (uint16_t *)sector_buf;
+        entries[offset_in_sector / 2] = value;
+        ata_write_sector(sector, sector_buf);
+    }
+}
+
+// Finds the first free cluster (a zero FAT entry), marks it end-of-chain to claim it, and returns it;
+// returns 0 if the disk is full
+static uint16_t fat_alloc_cluster(void)
+{
+    uint32_t total_entries = fat_size_sectors * (ATA_SECTOR_SIZE / 2);
+    uint8_t sector_buf[ATA_SECTOR_SIZE];
+
+    for (uint32_t cluster = 2; cluster < total_entries; cluster++)
+    {
+        uint32_t fat_offset = cluster * 2;
+        uint32_t sector = fat_start_lba + (fat_offset / ATA_SECTOR_SIZE);
+        uint32_t offset_in_sector = fat_offset % ATA_SECTOR_SIZE;
+
+        if (offset_in_sector == 0) // only re-read when crossing into a new sector
+        {
+            if (ata_read_sector(sector, sector_buf) != 0)
+            {
+                return 0;
+            }
+        }
+
+        uint16_t *entries = (uint16_t *)sector_buf;
+        if (entries[offset_in_sector / 2] == 0x0000)
+        {
+            fat_set_cluster_entry((uint16_t)cluster, 0xFFFF); // claim it immediately as end-of-chain
+            return (uint16_t)cluster;
+        }
+    }
+
+    return 0; // disk full
+}
+
+// Finds the first free (deleted or never-used) root directory slot
+static int fat_alloc_dir_entry(uint32_t *out_sector, uint32_t *out_offset)
+{
+    uint8_t sector_buf[ATA_SECTOR_SIZE];
+    int entries_per_sector = ATA_SECTOR_SIZE / sizeof(struct fat_dir_entry);
+
+    for (uint32_t s = 0; s < root_dir_sectors; s++)
+    {
+        if (ata_read_sector(root_dir_start_lba + s, sector_buf) != 0)
+        {
+            return -1;
+        }
+
+        struct fat_dir_entry *entries = (struct fat_dir_entry *)sector_buf;
+
+        for (int i = 0; i < entries_per_sector; i++)
+        {
+            if (entries[i].name[0] == 0x00 || entries[i].name[0] == 0xE5)
+            {
+                *out_sector = root_dir_start_lba + s;
+                *out_offset = (uint32_t)i;
+                return 0;
+            }
+        }
+    }
+
+    return -1; // root directory full — FAT16's root dir has a fixed size, unlike subdirectories
+}
+
+// Walks a cluster chain and returns its last cluster, or 0 if the chain is empty
+static uint16_t fat_find_last_cluster(uint16_t first_cluster)
+{
+    if (first_cluster < 2 || first_cluster >= 0xFFF8)
+    {
+        return 0;
+    }
+
+    uint16_t cluster = first_cluster;
+    uint16_t next = fat_get_next_cluster(cluster);
+    while (next >= 2 && next < 0xFFF8)
+    {
+        cluster = next;
+        next = fat_get_next_cluster(cluster);
+    }
+    return cluster;
+}
+
+// Frees every cluster in a chain back to the FAT — used when truncating an existing file
+static void fat_free_chain(uint16_t first_cluster)
+{
+    uint16_t cluster = first_cluster;
+    while (cluster >= 2 && cluster < 0xFFF8)
+    {
+        uint16_t next = fat_get_next_cluster(cluster);
+        fat_set_cluster_entry(cluster, 0x0000);
+        cluster = next;
+    }
+}
+
+// Creates filename, or opens an existing one per mode; returns a fd usable with fat_write, or -1
+int fat_open_write(const char *filename, int mode)
+{
+    if (!fat_ready)
+    {
+        return -1;
+    }
+
+    uint32_t dir_sector, dir_offset;
+    struct fat_dir_entry existing;
+    int exists = (fat_find_entry_location(filename, &dir_sector, &dir_offset, &existing) == 0);
+
+    if (exists && mode == FAT_OPEN_CREATE)
+    {
+        return -1; // strict create — caller must ask for TRUNCATE or APPEND to touch an existing file
+    }
+    if (!exists && fat_alloc_dir_entry(&dir_sector, &dir_offset) != 0)
+    {
+        return -1; // root directory full
+    }
+
+    uint8_t sector_buf[ATA_SECTOR_SIZE];
+    if (ata_read_sector(dir_sector, sector_buf) != 0)
+    {
+        return -1;
+    }
+    struct fat_dir_entry *entries = (struct fat_dir_entry *)sector_buf;
+    struct fat_dir_entry *e = &entries[dir_offset];
+
+    uint16_t start_cluster = 0;
+    uint32_t start_file_size = 0;
+    uint32_t start_cluster_offset = 0;
+
+    if (!exists) // a brand new zero-length entry, same as the old create-only behavior
+    {
+        uint8_t name83[11];
+        fat_name_to_83(filename, name83);
+        for (int i = 0; i < 8; i++)
+        {
+            e->name[i] = name83[i];
+        }
+        for (int i = 0; i < 3; i++)
+        {
+            e->ext[i] = name83[8 + i];
+        }
+        e->attr = 0;
+        e->reserved = 0;
+        e->create_time_tenth = 0;
+        e->create_time = 0;
+        e->create_date = 0;
+        e->last_access_date = 0;
+        e->first_cluster_high = 0;
+        e->write_time = 0;
+        e->write_date = 0;
+        e->first_cluster_low = 0;
+        e->file_size = 0;
+
+        if (ata_write_sector(dir_sector, sector_buf) != 0)
+        {
+            return -1;
+        }
+    }
+    else if (mode == FAT_OPEN_TRUNCATE)
+    {
+        if (existing.first_cluster_low != 0)
+        {
+            fat_free_chain(existing.first_cluster_low); // return the old data's clusters before rewriting
+        }
+
+        e->first_cluster_low = 0;
+        e->file_size = 0;
+        if (ata_write_sector(dir_sector, sector_buf) != 0)
+        {
+            return -1;
+        }
+    }
+    else // FAT_OPEN_APPEND — resume writing from wherever the file currently ends
+    {
+        start_file_size = existing.file_size;
+
+        if (existing.first_cluster_low != 0)
+        {
+            start_cluster = fat_find_last_cluster(existing.first_cluster_low);
+
+            uint32_t cluster_size = (uint32_t)sectors_per_cluster * ATA_SECTOR_SIZE;
+            start_cluster_offset = start_file_size % cluster_size;
+            if (start_cluster_offset == 0 && start_file_size > 0)
+            {
+                // the last cluster is exactly full — force fat_write's own overflow check to
+                // allocate a fresh cluster before the very next byte, rather than writing offset 0
+                // of the (already full) last cluster and silently overwriting real data
+                start_cluster_offset = cluster_size;
+            }
+        }
+    }
+
+    for (int i = 0; i < MAX_OPEN_FILES; i++)
+    {
+        if (!open_files[i].in_use)
+        {
+            open_files[i].in_use = 1;
+            open_files[i].file_size = start_file_size;
+            open_files[i].current_cluster = start_cluster; // 0 means "allocate lazily on first write"
+            open_files[i].cluster_offset = start_cluster_offset;
+            open_files[i].file_offset = start_file_size;
+            open_files[i].writable = 1;
+            open_files[i].dir_entry_sector = dir_sector;
+            open_files[i].dir_entry_offset = dir_offset;
+            return i + FAT_FD_BASE;
+        }
+    }
+
+    return -1; // no free descriptor slots
+}
+
+// Writes len bytes from buffer to fd, extending the file's cluster chain as needed
+int fat_write(int fd, const uint8_t *buffer, uint32_t len)
+{
+    int index = fd - FAT_FD_BASE;
+    if (index < 0 || index >= MAX_OPEN_FILES || !open_files[index].in_use || !open_files[index].writable)
+    {
+        return -1;
+    }
+
+    struct open_file *f = &open_files[index];
+    uint32_t cluster_size = (uint32_t)sectors_per_cluster * ATA_SECTOR_SIZE;
+    uint8_t sector_buf[ATA_SECTOR_SIZE];
+    uint32_t bytes_written = 0;
+
+    while (bytes_written < len)
+    {
+        if (f->current_cluster == 0) // this is the very first write — nothing allocated yet
+        {
+            uint16_t new_cluster = fat_alloc_cluster();
+            if (new_cluster == 0)
+            {
+                break; // disk full
+            }
+            f->current_cluster = new_cluster;
+            f->cluster_offset = 0;
+
+            if (ata_read_sector(f->dir_entry_sector, sector_buf) == 0) // record it as the file's first cluster
+            {
+                struct fat_dir_entry *entries = (struct fat_dir_entry *)sector_buf;
+                entries[f->dir_entry_offset].first_cluster_low = new_cluster;
+                ata_write_sector(f->dir_entry_sector, sector_buf);
+            }
+        }
+        else if (f->cluster_offset >= cluster_size) // current cluster is full — chain to a new one
+        {
+            uint16_t new_cluster = fat_alloc_cluster();
+            if (new_cluster == 0)
+            {
+                break; // disk full
+            }
+            fat_set_cluster_entry(f->current_cluster, new_cluster);
+            f->current_cluster = new_cluster;
+            f->cluster_offset = 0;
+        }
+
+        uint32_t sector_in_cluster = f->cluster_offset / ATA_SECTOR_SIZE;
+        uint32_t offset_in_sector = f->cluster_offset % ATA_SECTOR_SIZE;
+        uint32_t cluster_lba = data_start_lba + (uint32_t)(f->current_cluster - 2) * sectors_per_cluster;
+
+        if (ata_read_sector(cluster_lba + sector_in_cluster, sector_buf) != 0) // read-modify-write
+        {
+            break;
+        }
+
+        uint32_t available_in_sector = ATA_SECTOR_SIZE - offset_in_sector;
+        uint32_t remaining_requested = len - bytes_written;
+        uint32_t to_copy = available_in_sector < remaining_requested ? available_in_sector : remaining_requested;
+
+        for (uint32_t i = 0; i < to_copy; i++)
+        {
+            sector_buf[offset_in_sector + i] = buffer[bytes_written + i];
+        }
+
+        if (ata_write_sector(cluster_lba + sector_in_cluster, sector_buf) != 0)
+        {
+            break;
+        }
+
+        bytes_written += to_copy;
+        f->file_offset += to_copy;
+        f->cluster_offset += to_copy;
+        if (f->file_offset > f->file_size)
+        {
+            f->file_size = f->file_offset;
+        }
+    }
+
+    // Persist the updated size now, not just on close — so a task that exits without calling
+    // fat_close (already a documented leak) still leaves a correctly-sized file on disk
+    if (ata_read_sector(f->dir_entry_sector, sector_buf) == 0)
+    {
+        struct fat_dir_entry *entries = (struct fat_dir_entry *)sector_buf;
+        entries[f->dir_entry_offset].file_size = f->file_size;
+        ata_write_sector(f->dir_entry_sector, sector_buf);
+    }
+
+    return (int)bytes_written;
+}
+
 // Bounded copy that always null-terminates, unlike strncpy
 static void fat_copy_string(char *dest, const char *src, uint32_t dest_size)
 {
@@ -588,7 +926,9 @@ static void fat_short_name_to_display(const struct fat_dir_entry *e, char *out, 
     out[pos] = '\0';
 }
 
-// Returns the index-th real root directory entry, preferring its long name; unsynchronized LFN buffer is safe only because the shell serializes filesystem tasks
+// Returns the index-th real entry in the root directory (0-based, deleted/LFN/volume-label
+// entries don't count), preferring its long name when present. No locking around the shared
+// LFN buffer here — currently safe only because the shell serializes filesystem-using tasks.
 int fat_list_entry(int index, char *name_out, uint32_t name_out_size, uint32_t *size_out)
 {
     if (!fat_ready)

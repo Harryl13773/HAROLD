@@ -1,3 +1,5 @@
+// Public interface for the PS/2 keyboard driver
+
 #ifndef KEYBOARD_H
 #define KEYBOARD_H
 

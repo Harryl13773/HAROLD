@@ -1,3 +1,5 @@
+// Sets up the Task State Segment used for ring3->ring0 stack switches on interrupts/syscalls
+
 #include <stdint.h>
 #include <stddef.h>
 #include "gdt.h"

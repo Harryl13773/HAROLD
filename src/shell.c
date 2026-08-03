@@ -1,3 +1,5 @@
+// Interactive shell task: reads a filename from the keyboard and runs it as an ELF program
+
 #include "keyboard.h"
 #include "terminal.h"
 #include "task.h"

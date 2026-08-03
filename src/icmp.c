@@ -1,3 +1,5 @@
+// ICMP handling: replies to echo requests (ping) over IP
+
 #include <stdint.h>
 #include "terminal.h"
 #include "ip.h"

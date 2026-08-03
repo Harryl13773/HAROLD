@@ -1,3 +1,5 @@
+// Public interface for handling received ICMP messages
+
 #ifndef ICMP_H
 #define ICMP_H
 

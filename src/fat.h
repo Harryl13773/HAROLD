@@ -1,3 +1,5 @@
+// Public interface for the FAT16 filesystem driver
+
 #ifndef FAT_H
 #define FAT_H
 
@@ -17,6 +19,17 @@ int fat_read(int fd, uint8_t *buffer, uint32_t len);
 
 // Closes a descriptor opened by fat_open; returns 0 or -1 on an invalid fd
 int fat_close(int fd);
+
+#define FAT_OPEN_CREATE 0   // fails if the file already exists
+#define FAT_OPEN_TRUNCATE 1 // creates if missing, or empties an existing file before writing
+#define FAT_OPEN_APPEND 2   // creates if missing, or resumes writing from the end of an existing file
+
+// Creates filename, or opens an existing one per mode (FAT_OPEN_*); returns a fd or -1
+int fat_open_write(const char *filename, int mode);
+
+// Writes len bytes from buffer to fd (opened via fat_open_write), extending the file as needed;
+// returns bytes actually written (less than len only if the disk fills up)
+int fat_write(int fd, const uint8_t *buffer, uint32_t len);
 
 // Gets the index-th root directory entry's name and size; returns 0, or -1 past the last entry
 int fat_list_entry(int index, char *name_out, uint32_t name_out_size, uint32_t *size_out);

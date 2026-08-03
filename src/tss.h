@@ -1,3 +1,5 @@
+// TSS layout and public interface for installing it and updating the kernel stack pointer
+
 #ifndef TSS_H
 #define TSS_H
 

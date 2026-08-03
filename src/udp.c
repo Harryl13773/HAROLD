@@ -1,3 +1,5 @@
+// UDP layer: datagram send/receive over IP and a port-7 echo service
+
 #include <stdint.h>
 #include "terminal.h"
 #include "ip.h"

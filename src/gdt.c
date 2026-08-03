@@ -1,3 +1,5 @@
+// Sets up the Global Descriptor Table: null, kernel code/data, user code/data, and TSS descriptors
+
 #include <stdint.h>
 #include "gdt.h"
 #include "tss.h"

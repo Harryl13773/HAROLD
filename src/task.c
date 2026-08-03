@@ -1,9 +1,13 @@
+// Cooperative/preemptive round-robin task scheduler: task creation, context switching, sleep, wait, and reaping
+
 #include <stdint.h>
 #include <stddef.h>
 #include "task.h"
 #include "heap.h"
 #include "pit.h"
 #include "tss.h"
+#include "paging.h"
+#include "pmm.h"
 #include "terminal.h"
 
 extern void switch_task(uint32_t *old_esp, uint32_t new_esp); // defined in task_asm.asm
@@ -39,6 +43,11 @@ void task_switch_to(int id)
         tss_set_kernel_stack((uint32_t)tasks[id].stack_base + TASK_STACK_SIZE);
     }
 
+    if (tasks[id].page_directory != NULL)
+    {
+        paging_switch_directory(tasks[id].page_directory);
+    }
+
     switch_task(&tasks[old].esp, tasks[id].esp);
 }
 
@@ -62,7 +71,13 @@ int task_current_id(void)
     return current_task;
 }
 
-// Frees stack memory for any task that has exited
+// Returns the page directory of the task currently running
+uint32_t *task_get_current_page_directory(void)
+{
+    return tasks[current_task].page_directory;
+}
+
+// Frees a task's stack, private page tables/data frames, and its cloned directory once it has exited
 void task_reap(void)
 {
     for (int i = 1; i < task_count; i++)
@@ -71,6 +86,13 @@ void task_reap(void)
         {
             kfree(tasks[i].stack_base);
             tasks[i].stack_base = NULL;
+
+            if (tasks[i].page_directory != NULL)
+            {
+                paging_free_user_directory(tasks[i].page_directory); // private tables/data frames first
+                pmm_free_frame((uint32_t)tasks[i].page_directory);   // then the directory frame itself
+                tasks[i].page_directory = NULL;
+            }
         }
     }
 }
@@ -86,6 +108,7 @@ void tasking_init(void)
     tasks[0].id = 0;
     tasks[0].state = TASK_RUNNING;
     tasks[0].stack_base = NULL;
+    tasks[0].page_directory = paging_get_kernel_directory();
 
     current_task = 0;
     task_count = 1;
@@ -124,6 +147,20 @@ int task_create(void (*entry_point)(void))
     {
         return -1;
     }
+
+    t->page_directory = paging_clone_kernel_directory();
+    if (t->page_directory == NULL)
+    {
+        kfree(t->stack_base); // don't leak the stack we just allocated if the directory clone fails
+        t->stack_base = NULL;
+        return -1;
+    }
+
+    terminal_writestring("Task ");
+    terminal_print_dec((uint32_t)id);
+    terminal_writestring(": cloned page directory at ");
+    terminal_print_hex((uint32_t)t->page_directory);
+    terminal_writestring("\n");
 
     uint32_t *stack_top = (uint32_t *)((uint8_t *)t->stack_base + TASK_STACK_SIZE);
 

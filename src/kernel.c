@@ -1,3 +1,5 @@
+// Kernel entry point: brings up every subsystem in order and starts the shell and network tasks
+
 #include <stdint.h>
 #include <stddef.h>
 #include "gdt.h"
@@ -50,13 +52,17 @@ void kernel_main(uint32_t multiboot_addr)
 
     if (rtl8139_is_present())
     {
-        // Resolved twice on purpose — the first is a real request/reply, the second should hit the ARP cache instead
+        // 192.168.18.1 is your Mac's own address on the vmnet-host bridge — a real device that will
+        // actually answer ARP, unlike 10.0.2.2 which only existed under the old SLIRP-based setup.
+        // Resolved twice on purpose: the first call is a real request/reply, the second should hit
+        // the cache instead — "ARP: cache hit, no request sent" is what confirms that actually happened.
         uint8_t bridge_ip[4] = {192, 168, 18, 1};
         uint8_t bridge_mac[6];
         arp_resolve(bridge_ip, bridge_mac);
         arp_resolve(bridge_ip, bridge_mac);
 
-        // 192.168.18.50 matches the vmnet-host subnet above — update if switching to SLIRP or vmnet-shared
+        // 192.168.18.50 matches the vmnet-host subnet above — update this if you switch back to
+        // SLIRP (`run`/`run-iso`, 10.0.2.15) or to vmnet-shared (whatever subnet it assigns)
         uint8_t our_ip[4] = {192, 168, 18, 50};
         ip_set_address(our_ip);
     }
@@ -80,8 +86,12 @@ void kernel_main(uint32_t multiboot_addr)
     fat_init();
 
     // Memory management: frames -> paging -> heap
+    // Reserving through kernel_end + HEAP_SIZE, not just kernel_end, since the heap that heap_init()
+    // sets up below occupies that whole range — pmm_alloc_frame() is about to be used for real
+    // (per-process page allocation), so handing out a frame the heap already owns is a live risk now,
+    // not just a theoretical one
     struct multiboot_info *mb_info = (struct multiboot_info *)multiboot_addr;
-    pmm_init(mb_info, (uint32_t)&kernel_end);
+    pmm_init(mb_info, (uint32_t)&kernel_end + HEAP_SIZE);
 
     terminal_writestring("Hello from my operating system!\n");
     multiboot_parse(multiboot_addr);

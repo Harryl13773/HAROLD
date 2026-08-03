@@ -1,3 +1,5 @@
+// Public interface for the VGA text-mode terminal driver
+
 #ifndef TERMINAL_H
 #define TERMINAL_H
 

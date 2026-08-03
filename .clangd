@@ -1,0 +1,10 @@
+CompileFlags:
+  Add:
+    - --target=i386-elf
+    - -ffreestanding
+    - -mgeneral-regs-only
+    - -fno-builtin
+    - -Wall
+    - -Wextra
+    - -Isrc
+    - -Iuserspace

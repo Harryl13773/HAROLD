@@ -1,3 +1,5 @@
+// VGA text-mode terminal driver: character output, cursor tracking, scrolling, and hex/decimal printing
+
 #include <stdint.h>
 #include <stddef.h>
 #include "terminal.h"

@@ -1,3 +1,5 @@
+// Public interface for IRQ stub installation and driver handler registration
+
 #ifndef IRQ_H
 #define IRQ_H
 

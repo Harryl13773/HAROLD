@@ -1,3 +1,5 @@
+// Public interface for the userspace libc: syscall wrappers and string/memory helpers
+
 #ifndef LIBC_H
 #define LIBC_H
 
@@ -27,6 +29,16 @@ int socket_send(int sockfd, const char *buf, unsigned int len);
 
 // Initiates a clean close of the socket; returns 0, or -1
 int socket_close(int sockfd);
+
+#define FAT_OPEN_CREATE 0   // fails if the file already exists
+#define FAT_OPEN_TRUNCATE 1 // creates if missing, or empties an existing file before writing
+#define FAT_OPEN_APPEND 2   // creates if missing, or resumes writing from the end of an existing file
+
+// Creates filename, or opens an existing one per mode (FAT_OPEN_*); returns a fd or -1
+int open_write(const char *filename, int mode);
+
+// Writes len bytes from buf to fd (opened via open_write); returns bytes written, or -1
+int fwrite(int fd, const char *buf, unsigned int len);
 
 // Terminates the calling program
 void exit(void);

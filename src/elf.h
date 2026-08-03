@@ -1,3 +1,5 @@
+// Public interface for loading and running static ELF32 executables
+
 #ifndef ELF_H
 #define ELF_H
 

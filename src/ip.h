@@ -1,3 +1,5 @@
+// Public interface for the IPv4 layer: addressing, checksums, send, and receive dispatch
+
 #ifndef IP_H
 #define IP_H
 

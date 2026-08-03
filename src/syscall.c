@@ -1,3 +1,5 @@
+// int 0x80 syscall dispatcher: file I/O, sockets, terminal write, and task exit for ring 3 programs
+
 #include <stdint.h>
 #include "idt.h"
 #include "terminal.h"
@@ -28,6 +30,8 @@ struct registers
 #define SYSCALL_SOCKET_RECV 7
 #define SYSCALL_SOCKET_SEND 8
 #define SYSCALL_SOCKET_CLOSE 9
+#define SYSCALL_OPEN_WRITE 10
+#define SYSCALL_FWRITE 11
 
 void syscall_handler(struct registers *regs)
 {
@@ -133,6 +137,23 @@ void syscall_handler(struct registers *regs)
     {
         int sockfd = (int)regs->ebx;
         regs->eax = (uint32_t)tcp_socket_close(sockfd);
+        break;
+    }
+
+    case SYSCALL_OPEN_WRITE:
+    {
+        const char *filename = (const char *)regs->ebx;
+        int mode = (int)regs->ecx;
+        regs->eax = (uint32_t)fat_open_write(filename, mode);
+        break;
+    }
+
+    case SYSCALL_FWRITE:
+    {
+        int fd = (int)regs->ebx;
+        const uint8_t *buf = (const uint8_t *)regs->ecx;
+        uint32_t len = regs->edx;
+        regs->eax = (uint32_t)fat_write(fd, buf, len);
         break;
     }
 

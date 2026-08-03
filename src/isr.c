@@ -1,3 +1,5 @@
+// CPU exception (ISR 0-31) handlers: prints a fault banner, then isolates the faulting task or halts the kernel
+
 #include <stdint.h>
 #include "idt.h"
 #include "isr.h"

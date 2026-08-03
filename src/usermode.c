@@ -1,3 +1,5 @@
+// Allocates a user-mode stack and performs the ring0->ring3 jump into a task's entry point
+
 #include <stdint.h>
 #include "heap.h"
 #include "usermode.h"

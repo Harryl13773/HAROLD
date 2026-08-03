@@ -1,3 +1,5 @@
+// Public interface for GDT setup and selector constants
+
 #ifndef GDT_H
 #define GDT_H
 

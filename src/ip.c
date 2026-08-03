@@ -1,3 +1,5 @@
+// IPv4 layer: checksums, header build/send over Ethernet, and receive dispatch to ICMP/UDP/TCP
+
 #include <stdint.h>
 #include "terminal.h"
 #include "rtl8139.h"

@@ -1,3 +1,5 @@
+// Programmable Interval Timer driver: configures the tick rate and drives the scheduler on each IRQ0
+
 #include <stdint.h>
 #include "io.h"
 #include "irq.h"

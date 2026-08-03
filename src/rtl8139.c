@@ -1,3 +1,5 @@
+// RTL8139 NIC driver: PCI init, MAC readout, ring-buffer packet receive, and descriptor-based frame transmit
+
 #include <stdint.h>
 #include "io.h"
 #include "terminal.h"

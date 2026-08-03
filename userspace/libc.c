@@ -1,3 +1,5 @@
+// Userspace libc: int 0x80 syscall wrappers plus minimal string/memory helpers for ELF programs
+
 #include "libc.h"
 
 int write(const char *buf, unsigned int len)
@@ -60,6 +62,20 @@ int socket_close(int sockfd)
 {
     int result;
     __asm__ volatile("int $0x80" : "=a"(result) : "a"(9), "b"(sockfd));
+    return result;
+}
+
+int open_write(const char *filename, int mode)
+{
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(10), "b"(filename), "c"(mode));
+    return result;
+}
+
+int fwrite(int fd, const char *buf, unsigned int len)
+{
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(11), "b"(fd), "c"(buf), "d"(len));
     return result;
 }
 

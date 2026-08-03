@@ -1,3 +1,5 @@
+// Public interface for building and loading the IDT
+
 #ifndef IDT_H
 #define IDT_H
 

@@ -1,12 +1,13 @@
+// Kernel heap allocator: a first-fit free list with block splitting and coalescing
+
 #include <stdint.h>
 #include <stddef.h>
 #include "heap.h"
 #include "terminal.h"
 #include "io.h"
 
-#define HEAP_SIZE 0x100000 // 1MB — comfortably inside the identity-mapped 4MB
-#define ALIGNMENT 8        // keeps every returned pointer 8-byte aligned
-#define MIN_SPLIT 16       // don't bother splitting off a sliver smaller than this
+#define ALIGNMENT 8  // keeps every returned pointer 8-byte aligned
+#define MIN_SPLIT 16 // don't bother splitting off a sliver smaller than this
 
 extern uint32_t kernel_end; // linker symbol marking the end of kernel code/data
 
@@ -68,7 +69,9 @@ static void split_block(struct block_header *block, size_t size)
     block->size = size;
 }
 
-// First-fit search with interrupts disabled — a preempted mid-split heap would corrupt the list
+// First-fit search through the block list for a free block big enough for size.
+// Interrupts stay disabled for the walk — a preempted mid-split heap would
+// corrupt the list for whichever task runs next and also touches it.
 void *kmalloc(size_t size)
 {
     if (!heap_ready || size == 0)

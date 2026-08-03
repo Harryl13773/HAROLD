@@ -1,3 +1,5 @@
+// Public interface for remapping the 8259 PICs
+
 #ifndef PIC_H
 #define PIC_H
 

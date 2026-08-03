@@ -1,3 +1,5 @@
+// Public interface for the shell task
+
 #ifndef SHELL_H
 #define SHELL_H
 

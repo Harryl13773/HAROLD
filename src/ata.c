@@ -1,3 +1,5 @@
+// ATA PIO driver for detecting and reading/writing sectors on the primary master drive
+
 #include <stdint.h>
 #include "io.h"
 #include "terminal.h"
@@ -15,6 +17,8 @@
 #define ATA_CONTROL 0x3F6 // alternate status register
 
 #define ATA_CMD_READ_SECTORS 0x20
+#define ATA_CMD_WRITE_SECTORS 0x30
+#define ATA_CMD_CACHE_FLUSH 0xE7
 #define ATA_CMD_IDENTIFY 0xEC
 
 #define ATA_SR_ERR 0x01
@@ -134,6 +138,42 @@ int ata_read_sector(uint32_t lba, uint8_t *buffer)
     {
         buf16[i] = inw(ATA_DATA);
     }
+
+    return 0;
+}
+
+int ata_write_sector(uint32_t lba, const uint8_t *buffer)
+{
+    ata_wait_bsy();
+
+    // 0xE0 = LBA mode, master drive; top 4 LBA bits ride in the low nibble
+    outb(ATA_DRIVE_HEAD, 0xE0 | ((lba >> 24) & 0x0F));
+    ata_delay_400ns();
+
+    outb(ATA_SECCOUNT, 1);
+    outb(ATA_LBA_LOW, (uint8_t)(lba & 0xFF));
+    outb(ATA_LBA_MID, (uint8_t)((lba >> 8) & 0xFF));
+    outb(ATA_LBA_HIGH, (uint8_t)((lba >> 16) & 0xFF));
+    outb(ATA_COMMAND, ATA_CMD_WRITE_SECTORS);
+
+    ata_wait_bsy();
+
+    if (ata_wait_drq() != 0)
+    {
+        terminal_writestring("ATA: write error at LBA ");
+        terminal_print_dec(lba);
+        terminal_writestring("\n");
+        return -1;
+    }
+
+    const uint16_t *buf16 = (const uint16_t *)buffer;
+    for (int i = 0; i < ATA_SECTOR_SIZE / 2; i++)
+    {
+        outw(ATA_DATA, buf16[i]);
+    }
+
+    outb(ATA_COMMAND, ATA_CMD_CACHE_FLUSH); // without this, a write can sit in a volatile cache instead of really landing
+    ata_wait_bsy();
 
     return 0;
 }

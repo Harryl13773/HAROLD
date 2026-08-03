@@ -1,3 +1,5 @@
+// Public interface for the PIT driver
+
 #ifndef PIT_H
 #define PIT_H
 

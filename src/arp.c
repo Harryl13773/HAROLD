@@ -1,3 +1,5 @@
+// ARP protocol: IP->MAC resolution cache, request sending, and reply handling
+
 #include <stdint.h>
 #include "terminal.h"
 #include "rtl8139.h"

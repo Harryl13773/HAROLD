@@ -1,3 +1,5 @@
+// Public interface for the network polling loop and background net task
+
 #ifndef NET_H
 #define NET_H
 

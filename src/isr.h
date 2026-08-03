@@ -1,3 +1,5 @@
+// Public interface for installing CPU exception handlers
+
 #ifndef ISR_H
 #define ISR_H
 

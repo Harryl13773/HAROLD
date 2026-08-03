@@ -1,3 +1,5 @@
+// Builds and loads the Interrupt Descriptor Table
+
 #include <stdint.h>
 #include "idt.h"
 

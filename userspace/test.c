@@ -1,3 +1,5 @@
+// Basic ELF smoke test: prints a greeting, reads a line from stdin, and echoes it back
+
 #include "libc.h"
 
 void _start(void)

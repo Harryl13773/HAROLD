@@ -1,3 +1,5 @@
+// Public interface for the ATA PIO sector read/write driver
+
 #ifndef ATA_H
 #define ATA_H
 
@@ -10,5 +12,8 @@ void ata_init(void);
 
 // Reads one 512-byte sector at the given LBA into buffer
 int ata_read_sector(uint32_t lba, uint8_t *buffer);
+
+// Writes one 512-byte sector at the given LBA from buffer, flushing the drive's cache afterward
+int ata_write_sector(uint32_t lba, const uint8_t *buffer);
 
 #endif

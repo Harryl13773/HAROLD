@@ -1,3 +1,5 @@
+// PS/2 keyboard driver: scancode-to-ASCII translation, shift tracking, and a circular input buffer
+
 #include <stdint.h>
 #include "io.h"
 #include "irq.h"

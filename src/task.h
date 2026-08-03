@@ -1,3 +1,5 @@
+// Public interface for the task scheduler: task struct, lifecycle, and scheduling calls
+
 #ifndef TASK_H
 #define TASK_H
 
@@ -21,7 +23,8 @@ struct task
     uint32_t *stack_base;
     task_state_t state;
     int id;
-    uint32_t wake_tick; // tick at which a sleeping task should wake
+    uint32_t wake_tick;       // tick at which a sleeping task should wake
+    uint32_t *page_directory; // this task's own address space — a clone of the kernel's for now
 };
 
 // Sets up the task system and turns the currently running code into task 0
@@ -41,6 +44,9 @@ void task_exit(void);
 
 // Returns the ID of the task currently running
 int task_current_id(void);
+
+// Returns the page directory of the task currently running
+uint32_t *task_get_current_page_directory(void);
 
 // Frees stack memory for any task that has exited
 void task_reap(void);
