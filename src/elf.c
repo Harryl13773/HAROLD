@@ -50,7 +50,7 @@ struct elf32_program_header
 
 #define ELF_MAX_FILE_SIZE 65536
 
-int elf_load_and_run(const char *filename)
+int elf_load_and_run(const char *filename, int argc, char *const argv[])
 {
     uint8_t *file_buf = (uint8_t *)kmalloc(ELF_MAX_FILE_SIZE);
     if (file_buf == NULL)
@@ -195,7 +195,7 @@ int elf_load_and_run(const char *filename)
     void (*entry)(void) = (void (*)(void))ehdr->e_entry;
     kfree(file_buf); // segments are already copied to their destinations
 
-    usermode_enter(entry);
+    usermode_enter(entry, argc, argv);
 
     terminal_writestring("ELF: usermode_enter returned unexpectedly\n");
     return -1;

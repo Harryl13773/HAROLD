@@ -17,8 +17,11 @@ int fat_open(const char *filename);
 // Reads up to len bytes from fd, resuming from the last position; returns bytes read, 0 at EOF, or -1
 int fat_read(int fd, uint8_t *buffer, uint32_t len);
 
-// Closes a descriptor opened by fat_open; returns 0 or -1 on an invalid fd
+// Closes a descriptor opened by fat_open or fat_open_write; returns 0 or -1 on an invalid fd
 int fat_close(int fd);
+
+// Closes every descriptor still owned by task_id — called by task_reap on task exit
+void fat_close_all_for_task(int task_id);
 
 #define FAT_OPEN_CREATE 0   // fails if the file already exists
 #define FAT_OPEN_TRUNCATE 1 // creates if missing, or empties an existing file before writing

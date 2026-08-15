@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "io.h"
+#include "serial.h"
 #include "terminal.h"
 
 #define VGA_WIDTH 80
@@ -53,6 +55,15 @@ void terminal_initialize(void)
 
 void terminal_putchar(char c)
 {
+    // Video memory + cursor position is shared, global state with no other synchronization — the
+    // same category of bug already found and fixed for the heap and the FAT descriptor table.
+    // Without this, two tasks writing at once (including a scroll mid-copy) tears the output.
+    uint32_t flags = save_and_disable_interrupts();
+
+    // Mirrored to serial so nothing that ever appeared on screen is lost once VGA scrolls it away
+    // — a fault banner's position in this stream now always matches when it actually happened
+    serial_putchar(c);
+
     if (c == '\n')
     {
         cursor_col = 0;
@@ -88,14 +99,22 @@ void terminal_putchar(char c)
     {
         terminal_scroll();
     }
+
+    restore_interrupts(flags);
 }
 
 void terminal_writestring(const char *str)
 {
+    // Also protected as a whole string, not just per-character — otherwise two tasks' strings
+    // could still interleave line-by-line even with terminal_putchar itself made atomic
+    uint32_t flags = save_and_disable_interrupts();
+
     for (size_t i = 0; str[i] != '\0'; i++)
     {
         terminal_putchar(str[i]);
     }
+
+    restore_interrupts(flags);
 }
 
 // Prints a 32-bit value as 8 hex digits

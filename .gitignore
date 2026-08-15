@@ -1,1 +1,5 @@
 /isodir/
+*.o
+*.elf
+kernel.bin
+harold.iso

@@ -1,14 +1,19 @@
-// Minimal "cat" — reads bigfile.txt in small 16-byte chunks to exercise open/read/close
+// "cat" — reads a file in small 16-byte chunks to exercise open/read/close. Takes the filename
+// as argv[1]; falls back to bigfile.txt with no arguments, for the original no-argv test.
 
 #include "libc.h"
 
-void _start(void)
+void _start(int argc, char **argv)
 {
-    int fd = open("bigfile.txt");
+    const char *filename = (argc >= 2) ? argv[1] : "bigfile.txt";
+
+    int fd = open(filename);
     if (fd < 0)
     {
-        const char *err = "cat: could not open bigfile.txt\n";
+        const char *err = "cat: could not open ";
         write(err, strlen(err));
+        write(filename, strlen(filename));
+        write("\n", 1);
         exit();
     }
 

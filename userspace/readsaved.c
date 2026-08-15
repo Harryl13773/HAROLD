@@ -1,14 +1,19 @@
-// Reads and prints saved.txt — proves a file written by save.elf really persisted to disk
+// Reads and prints a file — proves a file written by save.elf really persisted to disk.
+// Takes an optional filename (argv[1]); defaults to saved.txt with no arguments.
 
 #include "libc.h"
 
-void _start(void)
+void _start(int argc, char **argv)
 {
-    int fd = open("saved.txt");
+    const char *filename = (argc >= 2) ? argv[1] : "saved.txt";
+    int fd = open(filename);
     if (fd < 0)
     {
-        const char *err = "readsaved: saved.txt not found\n";
+        const char *err = "readsaved: ";
         write(err, strlen(err));
+        write(filename, strlen(filename));
+        const char *err2 = " not found\n";
+        write(err2, strlen(err2));
         exit();
     }
 

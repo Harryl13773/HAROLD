@@ -3,11 +3,13 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "task.h"
+#include "io.h"
 #include "heap.h"
 #include "pit.h"
 #include "tss.h"
 #include "paging.h"
 #include "pmm.h"
+#include "fat.h"
 #include "terminal.h"
 
 extern void switch_task(uint32_t *old_esp, uint32_t new_esp); // defined in task_asm.asm
@@ -77,15 +79,24 @@ uint32_t *task_get_current_page_directory(void)
     return tasks[current_task].page_directory;
 }
 
-// Frees a task's stack, private page tables/data frames, and its cloned directory once it has exited
+// Frees a task's stack, open file descriptors, private page tables/data frames, and its cloned
+// directory once it has exited
 void task_reap(void)
 {
     for (int i = 1; i < task_count; i++)
     {
         if (tasks[i].state == TASK_UNUSED && tasks[i].stack_base != NULL)
         {
+            // The whole sequence below must be atomic: without this, task_create could see this
+            // slot as reusable partway through (stack_base already NULL, page_directory not yet)
+            // and start a brand new task here before this cleanup finishes — exactly the race that
+            // was corrupting page directories and causing the intermittent faults
+            uint32_t flags = save_and_disable_interrupts();
+
             kfree(tasks[i].stack_base);
             tasks[i].stack_base = NULL;
+
+            fat_close_all_for_task(i); // a task that exited without calling close() itself, cleaned up here instead
 
             if (tasks[i].page_directory != NULL)
             {
@@ -93,6 +104,8 @@ void task_reap(void)
                 pmm_free_frame((uint32_t)tasks[i].page_directory);   // then the directory frame itself
                 tasks[i].page_directory = NULL;
             }
+
+            restore_interrupts(flags);
         }
     }
 }
@@ -119,11 +132,20 @@ void tasking_init(void)
 // Hand-builds a new task's stack; reuses an already-reaped slot before growing task_count
 int task_create(void (*entry_point)(void))
 {
+    // Atomic for the same reason task_reap() is: a half-built task here (stack_base already
+    // non-NULL, state still TASK_UNUSED because it isn't set to TASK_READY until the very end)
+    // matches task_reap()'s own reap condition exactly. Without this, a timer interrupt landing
+    // between kmalloc(stack) and state = TASK_READY lets task_reap() free the brand-new stack out
+    // from under this function, which then keeps building on the now-NULL stack_base — a real,
+    // reproduced bug: confirmed via a headless run (task_create's own trace showed task_reap
+    // reaping the slot mid-construction, immediately followed by an Invalid Opcode fault).
+    uint32_t flags = save_and_disable_interrupts();
+
     int id = -1;
 
     for (int i = 1; i < task_count; i++)
     {
-        if (tasks[i].state == TASK_UNUSED && tasks[i].stack_base == NULL)
+        if (tasks[i].state == TASK_UNUSED && tasks[i].stack_base == NULL && tasks[i].page_directory == NULL)
         {
             id = i;
             break;
@@ -134,6 +156,7 @@ int task_create(void (*entry_point)(void))
     {
         if (task_count >= MAX_TASKS)
         {
+            restore_interrupts(flags);
             return -1;
         }
         id = task_count;
@@ -145,6 +168,7 @@ int task_create(void (*entry_point)(void))
     t->stack_base = (uint32_t *)kmalloc(TASK_STACK_SIZE);
     if (t->stack_base == NULL)
     {
+        restore_interrupts(flags);
         return -1;
     }
 
@@ -153,6 +177,7 @@ int task_create(void (*entry_point)(void))
     {
         kfree(t->stack_base); // don't leak the stack we just allocated if the directory clone fails
         t->stack_base = NULL;
+        restore_interrupts(flags);
         return -1;
     }
 
@@ -175,6 +200,7 @@ int task_create(void (*entry_point)(void))
     t->state = TASK_READY;
     t->id = id;
 
+    restore_interrupts(flags);
     return id;
 }
 

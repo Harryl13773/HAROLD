@@ -25,6 +25,7 @@
 #include "arp.h"
 #include "ip.h"
 #include "net.h"
+#include "serial.h"
 
 extern uint32_t kernel_end;
 
@@ -40,6 +41,10 @@ void kernel_main(uint32_t multiboot_addr)
     irq_install();
     keyboard_install();
     pit_init(100);
+
+    // Serial first — every terminal_writestring from here on also lands in a persistent,
+    // non-scrolling log (captured host-side via QEMU's -serial flag even with no display)
+    serial_init();
 
     // Screen ready before anything writes to it
     terminal_initialize();

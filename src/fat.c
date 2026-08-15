@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include "ata.h"
 #include "terminal.h"
+#include "task.h"
+#include "io.h"
 #include "fat.h"
 
 // Boot sector layout: BPB + FAT16 Extended BPB, byte-for-byte per spec
@@ -94,6 +96,7 @@ struct open_file
     int writable;
     uint32_t dir_entry_sector; // where this file's directory entry lives — write mode updates it directly
     uint32_t dir_entry_offset; // index of the entry within that sector
+    int owner_task_id;         // whoever opened this — lets task_reap close it if they exit without doing so
 };
 
 #define MAX_OPEN_FILES 8
@@ -486,6 +489,11 @@ int fat_open(const char *filename)
         return -1;
     }
 
+    // The slot scan-and-claim below must be atomic: without this, a timer interrupt could switch
+    // to another task (e.g. task_reap running fat_close_all_for_task) mid-scan and corrupt the
+    // shared table — the same category of bug heap.c's kmalloc/kfree once had, fixed the same way
+    uint32_t flags = save_and_disable_interrupts();
+
     for (int i = 0; i < MAX_OPEN_FILES; i++)
     {
         if (!open_files[i].in_use)
@@ -496,10 +504,13 @@ int fat_open(const char *filename)
             open_files[i].cluster_offset = 0;
             open_files[i].file_offset = 0;
             open_files[i].writable = 0;
+            open_files[i].owner_task_id = task_current_id();
+            restore_interrupts(flags);
             return i + FAT_FD_BASE;
         }
     }
 
+    restore_interrupts(flags);
     return -1; // no free descriptor slots
 }
 
@@ -562,7 +573,7 @@ int fat_read(int fd, uint8_t *buffer, uint32_t len)
     return (int)bytes_read; // 0 means EOF, distinct from -1 (invalid fd)
 }
 
-// Closes a descriptor opened by fat_open — leaked, not auto-closed, if a task exits without calling this
+// Closes a descriptor opened by fat_open or fat_open_write
 int fat_close(int fd)
 {
     int index = fd - FAT_FD_BASE;
@@ -571,8 +582,27 @@ int fat_close(int fd)
         return -1;
     }
 
+    uint32_t flags = save_and_disable_interrupts();
     open_files[index].in_use = 0;
+    restore_interrupts(flags);
     return 0;
+}
+
+// Closes every descriptor still owned by task_id — called by task_reap so a task that exits
+// without calling close() itself doesn't leak a slot out of MAX_OPEN_FILES forever
+void fat_close_all_for_task(int task_id)
+{
+    uint32_t flags = save_and_disable_interrupts();
+
+    for (int i = 0; i < MAX_OPEN_FILES; i++)
+    {
+        if (open_files[i].in_use && open_files[i].owner_task_id == task_id)
+        {
+            open_files[i].in_use = 0;
+        }
+    }
+
+    restore_interrupts(flags);
 }
 
 // Writes a 16-bit FAT entry at the given cluster index, updating every FAT copy so they stay in sync
@@ -784,6 +814,8 @@ int fat_open_write(const char *filename, int mode)
         }
     }
 
+    uint32_t flags = save_and_disable_interrupts(); // same shared-table race as fat_open — see the comment there
+
     for (int i = 0; i < MAX_OPEN_FILES; i++)
     {
         if (!open_files[i].in_use)
@@ -796,10 +828,13 @@ int fat_open_write(const char *filename, int mode)
             open_files[i].writable = 1;
             open_files[i].dir_entry_sector = dir_sector;
             open_files[i].dir_entry_offset = dir_offset;
+            open_files[i].owner_task_id = task_current_id();
+            restore_interrupts(flags);
             return i + FAT_FD_BASE;
         }
     }
 
+    restore_interrupts(flags);
     return -1; // no free descriptor slots
 }
 
