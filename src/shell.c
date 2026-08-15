@@ -51,7 +51,11 @@ static int shell_read_line(char *buf, int max_len)
     return count;
 }
 
-// Splits line in place on spaces into up to max_args tokens, argv[0] the program name
+// Splits line in place on spaces into up to max_args tokens, argv[0] the program name. A token
+// wrapped in double quotes is kept as a single argument even if it contains spaces — e.g.
+// save.elf notes.txt "hello world" passes argv[2] = "hello world", not just "hello" with "world"
+// silently dropped. The quotes themselves are stripped, not part of the returned token. An
+// unterminated quote just runs to the end of the line rather than erroring.
 static int tokenize(char *line, char **argv, int max_args)
 {
     int argc = 0;
@@ -66,6 +70,27 @@ static int tokenize(char *line, char **argv, int max_args)
         if (*p == '\0')
         {
             break;
+        }
+
+        if (*p == '"')
+        {
+            p++; // skip the opening quote — not part of the token
+            argv[argc++] = p;
+
+            while (*p != '\0' && *p != '"')
+            {
+                p++;
+            }
+            if (*p == '"')
+            {
+                *p = '\0'; // terminate the token here, strip the closing quote
+                p++;
+            }
+            if (*p == ' ')
+            {
+                p++;
+            }
+            continue;
         }
 
         argv[argc++] = p;
