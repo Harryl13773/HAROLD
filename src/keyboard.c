@@ -185,6 +185,11 @@ void keyboard_install(void)
     irq_set_handler(1, keyboard_handler);
 }
 
+int keyboard_has_char(void)
+{
+    return kb_head != kb_tail;
+}
+
 // Blocks (via hlt, not a busy-spin) until a character is available
 char keyboard_read_char(void)
 {

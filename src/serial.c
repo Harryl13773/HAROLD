@@ -4,19 +4,61 @@
 
 #include <stdint.h>
 #include "io.h"
+#include "irq.h"
+#include "pic.h"
+#include "terminal.h"
 #include "serial.h"
 
 #define COM1 0x3F8
 
+#define SERIAL_RX_BUFFER_SIZE 256
+static char serial_rx_buffer[SERIAL_RX_BUFFER_SIZE];
+static volatile int serial_rx_head = 0;
+static volatile int serial_rx_tail = 0;
+
+// Queues a received byte for serial_read_char; drops it if the buffer is full — same circular
+// buffer pattern as keyboard.c's kb_buffer_push
+static void serial_rx_push(char c)
+{
+    int next = (serial_rx_head + 1) % SERIAL_RX_BUFFER_SIZE;
+    if (next != serial_rx_tail)
+    {
+        serial_rx_buffer[serial_rx_head] = c;
+        serial_rx_head = next;
+    }
+}
+
+// Bit 0 of the line status register — set while a received byte is waiting in the RBR
+static int serial_data_ready(void)
+{
+    return inb(COM1 + 5) & 0x01;
+}
+
+static void serial_handler(void)
+{
+    while (serial_data_ready()) // drain the FIFO — more than one byte can be waiting per IRQ
+    {
+        char c = (char)inb(COM1);
+        terminal_putchar(c); // local echo — same "echo then buffer" order as keyboard_handler
+        serial_rx_push(c);
+    }
+}
+
 void serial_init(void)
 {
-    outb(COM1 + 1, 0x00); // disable UART interrupts — we poll
+    outb(COM1 + 1, 0x00); // disable UART interrupts while we finish setup
     outb(COM1 + 3, 0x80); // enable DLAB to set the baud rate divisor
     outb(COM1 + 0, 0x03); // divisor low byte: 38400 baud (115200 / 3)
     outb(COM1 + 1, 0x00); // divisor high byte
     outb(COM1 + 3, 0x03); // 8 bits, no parity, one stop bit; also clears DLAB
     outb(COM1 + 2, 0xC7); // enable + clear the FIFOs, 14-byte trigger
-    outb(COM1 + 4, 0x0B); // RTS/DSR set, IRQs off (OUT2 low)
+    outb(COM1 + 4, 0x0B); // DTR/RTS set, OUT2 set — OUT2 is what actually lets the UART drive IRQ4
+
+    irq_set_handler(4, serial_handler); // COM1 is IRQ4 on legacy PC wiring; register before
+                                         // enabling the interrupt below so it's never unhandled
+    pic_unmask_irq(4); // nothing has ever needed this line before — don't assume the BIOS left it
+                        // unmasked, unlike keyboard/PIT/NIC which demonstrably already are
+    outb(COM1 + 1, 0x01); // enable "received data available" interrupts
 }
 
 // Bit 5 of the line status register — set when the transmit holding register can accept a byte
@@ -49,4 +91,24 @@ void serial_writestring(const char *str)
     {
         serial_putchar(str[i]);
     }
+}
+
+int serial_has_char(void)
+{
+    return serial_rx_head != serial_rx_tail;
+}
+
+// Blocks (via hlt, not a busy-spin) until a byte arrives on COM1, same pattern as keyboard_read_char
+char serial_read_char(void)
+{
+    __asm__ volatile("sti"); // this may run with IF=0 if called from inside a syscall
+
+    while (serial_rx_head == serial_rx_tail)
+    {
+        __asm__ volatile("hlt");
+    }
+
+    char c = serial_rx_buffer[serial_rx_tail];
+    serial_rx_tail = (serial_rx_tail + 1) % SERIAL_RX_BUFFER_SIZE;
+    return c;
 }

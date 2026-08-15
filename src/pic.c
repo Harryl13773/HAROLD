@@ -33,3 +33,12 @@ void pic_remap(void)
     outb(PIC1_DATA, mask1); // restore saved masks
     outb(PIC2_DATA, mask2);
 }
+
+void pic_unmask_irq(int irq)
+{
+    uint16_t port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
+    uint8_t line = (irq < 8) ? (uint8_t)irq : (uint8_t)(irq - 8);
+
+    uint8_t mask = inb(port);
+    outb(port, mask & ~(1 << line));
+}

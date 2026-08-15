@@ -1,7 +1,8 @@
-// Interactive shell task: reads a command line from the keyboard, splits it into argv, and runs
-// argv[0] as an ELF program with the rest as its arguments
+// Interactive shell task: reads a command line from the keyboard or serial (COM1), splits it into
+// argv, and runs argv[0] as an ELF program with the rest as its arguments
 
 #include "keyboard.h"
+#include "serial.h"
 #include "terminal.h"
 #include "task.h"
 #include "elf.h"
@@ -21,14 +22,30 @@ static void shell_launch_trampoline(void)
     elf_load_and_run(shell_argv[0], shell_argc, shell_argv);
 }
 
-// Reads one line from the keyboard buffer, handling backspace properly
+// Blocks until a character is available from either the keyboard or the serial port (COM1),
+// whichever comes first — lets the shell be driven interactively by either input source. Useful
+// for scripted testing over the serial line, which doesn't have PS/2 scancode/shift-key mapping
+// to fight (sending an uppercase letter or a literal '/' over serial just works).
+static char console_read_char(void)
+{
+    __asm__ volatile("sti");
+
+    while (!keyboard_has_char() && !serial_has_char())
+    {
+        __asm__ volatile("hlt");
+    }
+
+    return keyboard_has_char() ? keyboard_read_char() : serial_read_char();
+}
+
+// Reads one line from the keyboard or serial, handling backspace properly
 static int shell_read_line(char *buf, int max_len)
 {
     int count = 0;
 
     while (count < max_len - 1)
     {
-        char c = keyboard_read_char();
+        char c = console_read_char();
 
         if (c == '\n')
         {

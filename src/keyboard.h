@@ -5,6 +5,9 @@
 
 void keyboard_install(void);
 
+// True if a key is waiting in the buffer without blocking
+int keyboard_has_char(void);
+
 // Blocks until a key is typed, returns its ASCII value
 char keyboard_read_char(void);
 
