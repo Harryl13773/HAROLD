@@ -87,12 +87,15 @@ void task_reap(void)
     {
         if (tasks[i].state == TASK_UNUSED && tasks[i].stack_base != NULL)
         {
-            // The whole sequence below must be atomic: without this, task_create could see this
-            // slot as reusable partway through (stack_base already NULL, page_directory not yet)
-            // and start a brand new task here before this cleanup finishes — exactly the race that
-            // was corrupting page directories and causing the intermittent faults
-            uint32_t flags = save_and_disable_interrupts();
-
+            // No outer atomic block needed here, unlike earlier versions of this function: kfree,
+            // fat_close_all_for_task, and pmm_free_frame (called directly and via
+            // paging_free_user_directory) are all now individually self-protected against a timer
+            // interrupt landing mid-call. The one invariant task_create's claim check actually
+            // depends on — state == TASK_UNUSED, stack_base == NULL, and page_directory == NULL
+            // never all becoming true until cleanup genuinely finishes — is preserved by leaving
+            // page_directory non-NULL until the very last line below. That final assignment is a
+            // single aligned store, which an interrupt can't land in the middle of, so it needs no
+            // extra protection either. Don't reorder these three steps without re-checking this.
             kfree(tasks[i].stack_base);
             tasks[i].stack_base = NULL;
 
@@ -104,8 +107,6 @@ void task_reap(void)
                 pmm_free_frame((uint32_t)tasks[i].page_directory);   // then the directory frame itself
                 tasks[i].page_directory = NULL;
             }
-
-            restore_interrupts(flags);
         }
     }
 }
@@ -132,15 +133,11 @@ void tasking_init(void)
 // Hand-builds a new task's stack; reuses an already-reaped slot before growing task_count
 int task_create(void (*entry_point)(void))
 {
-    // Atomic for the same reason task_reap() is: a half-built task here (stack_base already
-    // non-NULL, state still TASK_UNUSED because it isn't set to TASK_READY until the very end)
-    // matches task_reap()'s own reap condition exactly. Without this, a timer interrupt landing
-    // between kmalloc(stack) and state = TASK_READY lets task_reap() free the brand-new stack out
-    // from under this function, which then keeps building on the now-NULL stack_base — a real,
-    // reproduced bug: confirmed via a headless run (task_create's own trace showed task_reap
-    // reaping the slot mid-construction, immediately followed by an Invalid Opcode fault).
-    uint32_t flags = save_and_disable_interrupts();
-
+    // The slot scan and task_count growth below need no locking: task_create() is never called
+    // concurrently with itself (only from kernel_main at boot, sequentially, and later only from
+    // shell_task, which always task_wait()s for one launched task to exit before creating the
+    // next), and task_reap() never touches task_count. A slot only looks free here once task_reap
+    // has fully finished with it (see the comment there), so no race with reaping either.
     int id = -1;
 
     for (int i = 1; i < task_count; i++)
@@ -156,38 +153,35 @@ int task_create(void (*entry_point)(void))
     {
         if (task_count >= MAX_TASKS)
         {
-            restore_interrupts(flags);
             return -1;
         }
         id = task_count;
         task_count++;
     }
 
-    struct task *t = &tasks[id];
-
-    t->stack_base = (uint32_t *)kmalloc(TASK_STACK_SIZE);
-    if (t->stack_base == NULL)
+    // Everything below builds into locals, nothing touches tasks[id] yet — so however long the
+    // kmalloc/directory clone take, task_reap() has nothing to prematurely see, because this slot
+    // still reads exactly as it did before this call (fully reaped, all NULL/UNUSED).
+    uint32_t *new_stack_base = (uint32_t *)kmalloc(TASK_STACK_SIZE);
+    if (new_stack_base == NULL)
     {
-        restore_interrupts(flags);
         return -1;
     }
 
-    t->page_directory = paging_clone_kernel_directory();
-    if (t->page_directory == NULL)
+    uint32_t *new_page_directory = paging_clone_kernel_directory();
+    if (new_page_directory == NULL)
     {
-        kfree(t->stack_base); // don't leak the stack we just allocated if the directory clone fails
-        t->stack_base = NULL;
-        restore_interrupts(flags);
+        kfree(new_stack_base); // don't leak the stack we just allocated if the directory clone fails
         return -1;
     }
 
     terminal_writestring("Task ");
     terminal_print_dec((uint32_t)id);
     terminal_writestring(": cloned page directory at ");
-    terminal_print_hex((uint32_t)t->page_directory);
+    terminal_print_hex((uint32_t)new_page_directory);
     terminal_writestring("\n");
 
-    uint32_t *stack_top = (uint32_t *)((uint8_t *)t->stack_base + TASK_STACK_SIZE);
+    uint32_t *stack_top = (uint32_t *)((uint8_t *)new_stack_base + TASK_STACK_SIZE);
 
     *(--stack_top) = (uint32_t)entry_point; // consumed by task_launch's pop
     *(--stack_top) = (uint32_t)task_launch; // consumed by switch_task's ret
@@ -196,9 +190,18 @@ int task_create(void (*entry_point)(void))
     *(--stack_top) = 0;                     // fake saved esi
     *(--stack_top) = 0;                     // fake saved edi — becomes this task's esp
 
+    // Publish everything atomically — this is the only part of task_create that still needs
+    // interrupts disabled. task_reap()'s reap condition must never see stack_base non-NULL while
+    // state is still TASK_UNUSED, so all of these fields have to become visible together; every
+    // field here is a plain assignment now, not a kmalloc/clone, so this is O(1), not O(setup).
+    uint32_t flags = save_and_disable_interrupts();
+
+    struct task *t = &tasks[id];
+    t->stack_base = new_stack_base;
+    t->page_directory = new_page_directory;
     t->esp = (uint32_t)stack_top;
-    t->state = TASK_READY;
     t->id = id;
+    t->state = TASK_READY;
 
     restore_interrupts(flags);
     return id;

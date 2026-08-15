@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include "pmm.h"
 #include "terminal.h"
+#include "io.h"
 
 #define FRAME_SIZE 4096
 #define MAX_FRAMES (1024 * 1024) // supports up to 4GB of RAM
@@ -88,33 +89,44 @@ void pmm_init(struct multiboot_info *info, uint32_t kernel_end)
     used_frames = 0;
 }
 
-// Finds and reserves the first free frame
+// Finds and reserves the first free frame. Self-protected like heap.c's kmalloc/fat.c's fat_open
+// — this bitmap is shared across every task and interrupt context that ever allocates memory
+// (task.c, paging.c, elf.c, usermode.c), so every caller needs this atomic regardless of whether
+// it also wraps its own call site; nesting save_and_disable_interrupts is safe (see io.h).
 uint32_t pmm_alloc_frame(void)
 {
+    uint32_t flags = save_and_disable_interrupts();
+
+    uint32_t result = 0;
     for (uint32_t i = 0; i < total_frames + used_frames; i++)
     {
         if (!bitmap_test(i))
         {
             bitmap_set(i);
             used_frames++;
-            return i * FRAME_SIZE;
+            result = i * FRAME_SIZE;
+            break;
         }
     }
 
-    return 0; // out of memory
+    restore_interrupts(flags);
+    return result; // 0 means out of memory
 }
 
 // Releases a frame back to the free pool
 void pmm_free_frame(uint32_t frame_addr)
 {
-    uint32_t frame = frame_addr / FRAME_SIZE;
+    uint32_t flags = save_and_disable_interrupts();
 
+    uint32_t frame = frame_addr / FRAME_SIZE;
     if (bitmap_test(frame))
     {
         bitmap_clear(frame);
         used_frames--;
     }
     // double-free is ignored, not treated as an error
+
+    restore_interrupts(flags);
 }
 
 // Returns the current free frame count
