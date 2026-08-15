@@ -51,4 +51,11 @@ int strcmp(const char *a, const char *b);
 // Converts value to a decimal string in buf (must be at least 12 bytes), returns the length
 int itoa(int value, char *buf);
 
+// Allocates at least `size` bytes from this process's private static heap, or 0 (NULL) if nothing
+// big enough is free. Same first-fit/split/coalesce design as the kernel's own kmalloc.
+void *malloc(unsigned int size);
+
+// Returns a previously malloc'd block back to the free list
+void free(void *ptr);
+
 #endif
