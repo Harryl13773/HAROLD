@@ -133,6 +133,15 @@ int elf_load_and_run(const char *filename, int argc, char *const argv[])
         uint32_t end_addr = ph->p_vaddr + ph->p_memsz;
         uint32_t end_page = (end_addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
+        // The ring-3 stack lives at a fixed page just below the 4MB paging ceiling (see
+        // usermode.h) — refuse rather than risk a segment silently overlapping and corrupting it
+        if (end_page > USER_STACK_VADDR)
+        {
+            terminal_writestring("ELF: segment too large, would collide with the user stack\n");
+            kfree(file_buf);
+            return -1;
+        }
+
         terminal_writestring("ELF: segment vaddr=");
         terminal_print_hex(ph->p_vaddr);
         terminal_writestring(" memsz=");

@@ -32,10 +32,13 @@ static inline void enable_paging(void)
 
 void paging_init(void)
 {
-    // PAGE_USER makes the whole 4MB ring-3 accessible — not real isolation yet, just enough to prove ring 3 works
+    // Kernel-only by default: ring 0 access is never restricted by the U/S bit, so the kernel,
+    // interrupts, and syscalls keep working unchanged no matter which task's directory is loaded.
+    // A ring-3 task only ever sees an address here if it's explicitly remapped PAGE_USER into that
+    // task's own private table (see paging_map_user_page) — e.g. its ELF segment and its stack.
     for (uint32_t i = 0; i < ENTRIES; i++)
     {
-        first_page_table[i] = (i * PAGE_SIZE) | PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER;
+        first_page_table[i] = (i * PAGE_SIZE) | PAGE_PRESENT | PAGE_WRITABLE;
     }
 
     // Every other 4MB region stays unmapped — touching it will correctly page-fault

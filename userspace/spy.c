@@ -1,14 +1,12 @@
-// Reads the same raw address writer.elf wrote its secret to, without ever writing to it first —
-// if isolation is working, this reads whatever a fresh physical frame contains, not the secret
+// Reads the same two raw addresses writer.elf wrote its secrets to, without ever writing to
+// either first — if isolation is working, both read whatever a fresh physical frame contains,
+// not the secret
 
 #include "libc.h"
 
-void _start(void)
+static void read_and_report(const char *label, volatile char *raw)
 {
-    volatile char *raw = (volatile char *)0x300800;
-
-    const char *msg = "spy: reading 0x300800 without writing first: '";
-    write(msg, strlen(msg));
+    write(label, strlen(label));
 
     int len = 0;
     while (raw[len] != '\0' && len < 32)
@@ -19,6 +17,12 @@ void _start(void)
 
     const char *end = "'\n";
     write(end, strlen(end));
+}
+
+void _start(void)
+{
+    read_and_report("spy: reading 0x300800 without writing first: '", (volatile char *)0x300800);
+    read_and_report("spy: reading 0x3ff800 without writing first: '", (volatile char *)0x3FF800);
 
     exit();
 
