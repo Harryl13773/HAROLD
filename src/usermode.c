@@ -14,6 +14,37 @@ extern void jump_to_usermode(uint32_t entry_eip, uint32_t user_esp);
 
 void usermode_enter(void (*entry)(void), int argc, char *const argv[])
 {
+    if (argc > MAX_ARGS)
+    {
+        argc = MAX_ARGS; // backstop for any caller that doesn't already validate this itself —
+                          // the shell refuses an oversized command line before ever reaching here
+    }
+
+    // Refuse up front, before allocating or mapping anything, rather than risk writing below this
+    // stack's own page (into whatever's mapped, or isn't, at that address) if a future change to
+    // MAX_ARGS or the shell's line length ever lets the real content exceed what USER_STACK_SIZE
+    // can hold. Sum of every string's length+NUL, the pointer array (argc+1 entries), and the
+    // 3-word fake call frame — the exact layout built below.
+    uint32_t needed = 0;
+    for (int i = 0; i < argc; i++)
+    {
+        const char *src = argv[i];
+        uint32_t len = 0;
+        while (src[len] != '\0')
+        {
+            len++;
+        }
+        needed += len + 1;
+    }
+    needed = (needed + 3) & ~3u; // matches the alignment the real layout below also applies
+    needed += (uint32_t)(argc + 1) * sizeof(char *);
+    needed += 3 * sizeof(uint32_t);
+
+    if (needed > USER_STACK_SIZE)
+    {
+        return; // command line too large to fit this process's stack page
+    }
+
     // A genuinely private frame for this task's stack, mapped PAGE_USER at a fixed VA in the
     // same private table its ELF segment already lives in — same treatment elf.c gives the
     // segment itself, so no other task can read or write it. Freed automatically by
@@ -43,11 +74,6 @@ void usermode_enter(void (*entry)(void), int argc, char *const argv[])
 
     uint8_t *stack = (uint8_t *)USER_STACK_VADDR;
     uint8_t *top = stack + USER_STACK_SIZE;
-
-    if (argc > MAX_ARGS)
-    {
-        argc = MAX_ARGS; // silently truncate rather than fail — matches this shell's own line-length cap
-    }
 
     // Copy each argument string onto the user stack itself — already privately mapped above —
     // so the new process can read its own argv with no additional mapping work

@@ -3,8 +3,11 @@
 #ifndef USERMODE_H
 #define USERMODE_H
 
-// Max argv entries usermode_enter will place on the new stack (plenty for this project's shell)
-#define MAX_ARGS 8
+// Max argv entries usermode_enter will place on the new stack. Comfortably below what the
+// 4096-byte stack page (USER_STACK_SIZE, usermode.c) could ever actually hold even at the shell's
+// own max line length — usermode_enter still checks the real total at runtime rather than relying
+// on this bound alone (see the comment there).
+#define MAX_ARGS 16
 
 // Fixed VA for the ring-3 stack: the last page below the 4MB paging ceiling, in the same 4MB
 // region as every ELF's 0x300000 segment so it shares that region's already-created private

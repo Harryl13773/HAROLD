@@ -11,7 +11,7 @@
 // Set by the shell right before creating the launch task — safe as a shared buffer since the
 // shell always waits (task_wait) before reusing it for the next command. shell_argv points into
 // shell_command_line itself (tokenize() splits it in place), so both share the same lifetime.
-static char shell_command_line[64];
+static char shell_command_line[256];
 static char *shell_argv[MAX_ARGS];
 static int shell_argc;
 
@@ -56,12 +56,16 @@ static int shell_read_line(char *buf, int max_len)
 // save.elf notes.txt "hello world" passes argv[2] = "hello world", not just "hello" with "world"
 // silently dropped. The quotes themselves are stripped, not part of the returned token. An
 // unterminated quote just runs to the end of the line rather than erroring.
+//
+// Returns the argument count (1..max_args), 0 for an empty/all-whitespace line, or -1 if the line
+// has more arguments than max_args allows — the caller refuses to launch rather than silently
+// running with some of them dropped.
 static int tokenize(char *line, char **argv, int max_args)
 {
     int argc = 0;
     char *p = line;
 
-    while (*p != '\0' && argc < max_args)
+    while (*p != '\0')
     {
         while (*p == ' ')
         {
@@ -70,6 +74,11 @@ static int tokenize(char *line, char **argv, int max_args)
         if (*p == '\0')
         {
             break;
+        }
+
+        if (argc >= max_args)
+        {
+            return -1; // one more token than there's room for
         }
 
         if (*p == '"')
@@ -128,6 +137,13 @@ void shell_task(void)
         if (shell_argc == 0)
         {
             continue; // all-whitespace input
+        }
+        if (shell_argc < 0)
+        {
+            terminal_writestring("shell: too many arguments (max ");
+            terminal_print_dec(MAX_ARGS);
+            terminal_writestring(")\n");
+            continue;
         }
 
         int child_id = task_create(shell_launch_trampoline);
