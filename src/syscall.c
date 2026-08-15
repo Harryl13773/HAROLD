@@ -32,6 +32,8 @@ struct registers
 #define SYSCALL_SOCKET_CLOSE 9
 #define SYSCALL_OPEN_WRITE 10
 #define SYSCALL_FWRITE 11
+#define SYSCALL_MKDIR 12
+#define SYSCALL_SEEK 13
 
 void syscall_handler(struct registers *regs)
 {
@@ -95,12 +97,13 @@ void syscall_handler(struct registers *regs)
 
     case SYSCALL_LIST:
     {
+        const char *dir_path = (const char *)regs->esi;
         int index = (int)regs->ebx;
         char *name_buf = (char *)regs->ecx;
         uint32_t buf_size = regs->edx;
         uint32_t file_size;
 
-        if (fat_list_entry(index, name_buf, buf_size, &file_size) == 0)
+        if (fat_list_entry(dir_path, index, name_buf, buf_size, &file_size) == 0)
         {
             regs->eax = file_size;
         }
@@ -154,6 +157,21 @@ void syscall_handler(struct registers *regs)
         const uint8_t *buf = (const uint8_t *)regs->ecx;
         uint32_t len = regs->edx;
         regs->eax = (uint32_t)fat_write(fd, buf, len);
+        break;
+    }
+
+    case SYSCALL_MKDIR:
+    {
+        const char *path = (const char *)regs->ebx;
+        regs->eax = (uint32_t)fat_mkdir(path);
+        break;
+    }
+
+    case SYSCALL_SEEK:
+    {
+        int fd = (int)regs->ebx;
+        uint32_t offset = regs->ecx;
+        regs->eax = (uint32_t)fat_seek(fd, offset);
         break;
     }
 

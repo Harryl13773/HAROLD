@@ -1,7 +1,6 @@
-// Lists every file in the root directory via listdir(), one index at a time until it returns -1
-// past the last entry. Takes an optional substring filter (argv[1]) — the FAT root is flat (no
-// subdirectories to scope into, see the project's known limitations), so a name filter is the
-// closest useful equivalent to "ls <dir>".
+// Lists every entry in a directory via listdir(), one index at a time until it returns -1 past
+// the last entry. argv[1] is an optional directory path ("" / omitted means root), argv[2] an
+// optional substring filter within it.
 
 #include "libc.h"
 
@@ -50,7 +49,8 @@ static int contains(const char *haystack, const char *needle)
 
 void _start(int argc, char **argv)
 {
-    const char *filter = (argc >= 2) ? argv[1] : 0;
+    const char *dir_path = (argc >= 2) ? argv[1] : "";
+    const char *filter = (argc >= 3) ? argv[2] : 0;
 
     const char *banner = "Files on disk:\n";
     write(banner, strlen(banner));
@@ -60,7 +60,7 @@ void _start(int argc, char **argv)
 
     while (1)
     {
-        int size = listdir(index, name, sizeof(name));
+        int size = listdir(dir_path, index, name, sizeof(name));
         if (size < 0)
         {
             break;

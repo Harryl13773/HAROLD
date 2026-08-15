@@ -30,10 +30,10 @@ int close(int fd)
     return result;
 }
 
-int listdir(int index, char *name_buf, unsigned int buf_size)
+int listdir(const char *dir_path, int index, char *name_buf, unsigned int buf_size)
 {
     int result;
-    __asm__ volatile("int $0x80" : "=a"(result) : "a"(5), "b"(index), "c"(name_buf), "d"(buf_size));
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(5), "b"(index), "c"(name_buf), "d"(buf_size), "S"(dir_path));
     return result;
 }
 
@@ -76,6 +76,20 @@ int fwrite(int fd, const char *buf, unsigned int len)
 {
     int result;
     __asm__ volatile("int $0x80" : "=a"(result) : "a"(11), "b"(fd), "c"(buf), "d"(len));
+    return result;
+}
+
+int mkdir(const char *path)
+{
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(12), "b"(path));
+    return result;
+}
+
+int seek(int fd, unsigned int offset)
+{
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(13), "b"(fd), "c"(offset));
     return result;
 }
 
@@ -275,4 +289,25 @@ int itoa(int value, char *buf)
     }
     buf[len] = '\0';
     return len;
+}
+
+int atoi(const char *s)
+{
+    int i = 0;
+    int negative = 0;
+
+    if (s[i] == '-')
+    {
+        negative = 1;
+        i++;
+    }
+
+    int value = 0;
+    while (s[i] >= '0' && s[i] <= '9')
+    {
+        value = value * 10 + (s[i] - '0');
+        i++;
+    }
+
+    return negative ? -value : value;
 }

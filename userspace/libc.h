@@ -15,8 +15,9 @@ int open(const char *filename);
 // Closes a descriptor opened by open(); returns 0 or -1
 int close(int fd);
 
-// Gets the index-th file's name (into name_buf) and returns its size, or -1 past the last file
-int listdir(int index, char *name_buf, unsigned int buf_size);
+// Gets the index-th file's name (into name_buf) and returns its size, or -1 past the last file.
+// dir_path selects which directory to list ("" for root).
+int listdir(const char *dir_path, int index, char *name_buf, unsigned int buf_size);
 
 // Blocks until a client connects, then returns a socket descriptor for it
 int socket_accept(void);
@@ -33,12 +34,21 @@ int socket_close(int sockfd);
 #define FAT_OPEN_CREATE 0   // fails if the file already exists
 #define FAT_OPEN_TRUNCATE 1 // creates if missing, or empties an existing file before writing
 #define FAT_OPEN_APPEND 2   // creates if missing, or resumes writing from the end of an existing file
+#define FAT_OPEN_MODIFY 3   // creates if missing, or opens at the start of an existing file without
+                             // truncating it — combine with seek() for in-place edits
 
 // Creates filename, or opens an existing one per mode (FAT_OPEN_*); returns a fd or -1
 int open_write(const char *filename, int mode);
 
 // Writes len bytes from buf to fd (opened via open_write); returns bytes written, or -1
 int fwrite(int fd, const char *buf, unsigned int len);
+
+// Repositions fd (opened via open or open_write) to an absolute byte offset; returns 0, or -1 for
+// an invalid fd or an offset past the file's current end
+int seek(int fd, unsigned int offset);
+
+// Creates a new, empty subdirectory at path (the parent must already exist); returns 0 or -1
+int mkdir(const char *path);
 
 // Terminates the calling program
 void exit(void);
@@ -50,6 +60,10 @@ int strcmp(const char *a, const char *b);
 
 // Converts value to a decimal string in buf (must be at least 12 bytes), returns the length
 int itoa(int value, char *buf);
+
+// Parses a leading decimal integer from s (optional leading '-'), stopping at the first
+// non-digit; returns 0 if s doesn't start with a valid number
+int atoi(const char *s);
 
 // Allocates at least `size` bytes from this process's private static heap, or 0 (NULL) if nothing
 // big enough is free. Same first-fit/split/coalesce design as the kernel's own kmalloc.
