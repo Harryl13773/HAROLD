@@ -633,6 +633,7 @@ static uint16_t fat_alloc_cluster(void)
 {
     uint32_t total_entries = fat_size_sectors * (ATA_SECTOR_SIZE / 2);
     uint8_t sector_buf[ATA_SECTOR_SIZE];
+    uint32_t loaded_sector = 0xFFFFFFFF; // sentinel: no sector loaded yet, never a real sector number
 
     for (uint32_t cluster = 2; cluster < total_entries; cluster++)
     {
@@ -640,12 +641,20 @@ static uint16_t fat_alloc_cluster(void)
         uint32_t sector = fat_start_lba + (fat_offset / ATA_SECTOR_SIZE);
         uint32_t offset_in_sector = fat_offset % ATA_SECTOR_SIZE;
 
-        if (offset_in_sector == 0) // only re-read when crossing into a new sector
+        // Re-read whenever the needed sector isn't the one already in sector_buf. The old check
+        // here (offset_in_sector == 0) assumed the loop always starts at a sector boundary, but
+        // cluster 2 (the loop's own starting point) lands at offset_in_sector == 4, not 0 — so the
+        // very first iteration skipped the read entirely and scanned uninitialized stack memory as
+        // if it were real FAT entries, sometimes "finding" an already-used cluster as free and
+        // handing it out to two files at once. Confirmed on disk: README.TXT and NEWFILE.TXT ended
+        // up sharing cluster 4 this way, silently corrupting README.TXT's content.
+        if (sector != loaded_sector)
         {
             if (ata_read_sector(sector, sector_buf) != 0)
             {
                 return 0;
             }
+            loaded_sector = sector;
         }
 
         uint16_t *entries = (uint16_t *)sector_buf;
