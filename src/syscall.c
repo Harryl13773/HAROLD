@@ -4,7 +4,7 @@
 #include "idt.h"
 #include "terminal.h"
 #include "task.h"
-#include "keyboard.h"
+#include "console.h"
 #include "mouse.h"
 #include "fat.h"
 #include "tcp.h"
@@ -67,11 +67,11 @@ void syscall_handler(struct registers *regs)
 
         if (fd == 0)
         {
-            // stdin — blocks on the keyboard, unchanged from before
+            // stdin — merged keyboard/serial, same input source the shell's own command line uses
             uint32_t count = 0;
             while (count < max_len)
             {
-                char c = keyboard_read_char();
+                char c = console_read_char();
                 buf[count++] = c;
                 if (c == '\n')
                 {
