@@ -1,4 +1,4 @@
-// Kernel entry point: brings up every subsystem in order and starts the shell and network tasks
+// Kernel entry point: brings up every subsystem in order and starts the shell and network tasks.
 
 #include <stdint.h>
 #include <stddef.h>
@@ -31,6 +31,7 @@
 
 extern uint32_t kernel_end;
 
+// Entry point boot.asm jumps to once GRUB hands off control
 void kernel_main(uint32_t multiboot_addr)
 {
     // CPU tables and exception/IRQ plumbing
@@ -45,8 +46,7 @@ void kernel_main(uint32_t multiboot_addr)
     mouse_install();
     pit_init(100);
 
-    // Serial first — every terminal_writestring from here on also lands in a persistent,
-    // non-scrolling log (captured host-side via QEMU's -serial flag even with no display)
+    // Initialize serial first so all terminal output is captured in the persistent log
     serial_init();
 
     // Screen ready before anything writes to it
@@ -60,29 +60,21 @@ void kernel_main(uint32_t multiboot_addr)
 
     if (rtl8139_is_present())
     {
-        // 192.168.18.1 is your Mac's own address on the vmnet-host bridge — a real device that will
-        // actually answer ARP, unlike 10.0.2.2 which only existed under the old SLIRP-based setup.
-        // Resolved twice on purpose: the first call is a real request/reply, the second should hit
-        // the cache instead — "ARP: cache hit, no request sent" is what confirms that actually happened.
+
+        // Resolve the host MAC twice to verify both ARP and cache lookup
         uint8_t bridge_ip[4] = {192, 168, 18, 1};
         uint8_t bridge_mac[6];
         arp_resolve(bridge_ip, bridge_mac);
         arp_resolve(bridge_ip, bridge_mac);
 
-        // 192.168.18.50 matches the vmnet-host subnet above — update this if you switch back to
-        // SLIRP (`run`/`run-iso`, 10.0.2.15) or to vmnet-shared (whatever subnet it assigns)
+        // Keep this IP on the vmnet-host subnet; update it if the network mode changes
         uint8_t our_ip[4] = {192, 168, 18, 50};
         ip_set_address(our_ip);
 
-        // The bridge address doubles as our gateway — it's the Mac itself, which (via vmnet-host)
-        // is what actually has a path off this subnet. Update alongside our_ip/bridge_ip above if
-        // you switch backends.
+        // Use the bridge as the gateway; update it when changing network backends
         ip_set_gateway(bridge_ip);
 
-        // A public resolver, reachable through the gateway above — requires the bridge to actually
-        // provide real internet access (vmnet-host does, by bridging to the Mac's own network).
-        // This is what ip_resolve_route's gateway-aware routing exists for: this address is never
-        // on our own /24, so every DNS query goes out via the gateway, not a direct ARP.
+        // Use a public DNS resolver reached through the gateway
         uint8_t dns_server[4] = {8, 8, 8, 8};
         dns_set_server(dns_server);
     }
@@ -105,11 +97,7 @@ void kernel_main(uint32_t multiboot_addr)
 
     fat_init();
 
-    // Memory management: frames -> paging -> heap
-    // Reserving through kernel_end + HEAP_SIZE, not just kernel_end, since the heap that heap_init()
-    // sets up below occupies that whole range — pmm_alloc_frame() is about to be used for real
-    // (per-process page allocation), so handing out a frame the heap already owns is a live risk now,
-    // not just a theoretical one
+    // Memory setup: frames -> paging -> heap; reserve the heap range from frame allocation
     struct multiboot_info *mb_info = (struct multiboot_info *)multiboot_addr;
     pmm_init(mb_info, (uint32_t)&kernel_end + HEAP_SIZE);
 

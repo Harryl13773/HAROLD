@@ -1,5 +1,5 @@
 // FAT16 filesystem driver: boot sector parsing, directory/LFN traversal, path resolution across
-// subdirectories, and file read/write (including in-place, via seek)
+// subdirectories, and file read/write (including in-place, via seek).
 
 #include <stdint.h>
 #include "ata.h"
@@ -290,6 +290,7 @@ static int names_equal_ci(const char *a, const char *b)
     return *a == '\0' && *b == '\0';
 }
 
+// Reads the boot sector on the primary master, validates it's FAT16, and computes the volume layout
 int fat_init(void)
 {
     uint8_t boot[ATA_SECTOR_SIZE];
@@ -342,15 +343,14 @@ int fat_init(void)
     return 0;
 }
 
-// Identifies where a directory's entries live: FAT16's root is a fixed-size area with no cluster
-// of its own; a subdirectory is an ordinary cluster chain, just interpreted as entries instead of
-// file data. first_cluster is meaningless when is_root is set.
+// Identifies a directory as either the fixed FAT16 root or a subdirectory cluster chain
 struct fat_dir_ref
 {
     int is_root;
     uint16_t first_cluster;
 };
 
+// Builds a directory reference pointing at the root
 static struct fat_dir_ref fat_root_dir_ref(void)
 {
     struct fat_dir_ref dir = {1, 0};
@@ -374,8 +374,7 @@ static uint16_t fat_get_next_cluster(uint16_t cluster)
     return entries[offset_in_sector / 2];
 }
 
-// Returns the absolute LBA of the n-th sector of dir's entry space, or 0 past the end — root is a
-// fixed-size area, a subdirectory is an ordinary cluster chain walked via fat_get_next_cluster
+// Returns the LBA of dir's n-th sector, or 0 past the end
 static uint32_t fat_dir_sector_lba(struct fat_dir_ref dir, uint32_t n)
 {
     if (dir.is_root)
@@ -408,8 +407,7 @@ static uint32_t fat_dir_sector_lba(struct fat_dir_ref dir, uint32_t n)
     return data_start_lba + (uint32_t)(cluster - 2) * sectors_per_cluster + sector_in_chain;
 }
 
-// Scans dir for component, checking both the reconstructed long name and the 8.3 short name, and
-// reports exactly where the match lives on disk (sector + index within that sector)
+// Finds an entry by long or 8.3 name and returns its disk location
 static int fat_find_entry_in_dir(struct fat_dir_ref dir, const char *component, uint32_t *out_sector, uint32_t *out_offset, struct fat_dir_entry *out_entry)
 {
     uint8_t name83[11];
@@ -482,9 +480,7 @@ static int fat_find_entry_in_dir(struct fat_dir_ref dir, const char *component, 
 
 #define FAT_MAX_COMPONENT 48 // generous — 8.3 short names cap at 11 chars, longest real filename here is 14
 
-// Extracts the next '/'-delimited component from *path_ptr into out (bounded, NUL-terminated),
-// advancing *path_ptr past it (and its separator, if any). Returns the component's length, or 0
-// once nothing is left (or a component was empty, e.g. "a//b").
+// Extracts the next '/' separated path component, returning its length or 0 if empty.
 static uint32_t fat_next_path_component(const char **path_ptr, char *out, uint32_t out_size)
 {
     const char *p = *path_ptr;
@@ -506,10 +502,7 @@ static uint32_t fat_next_path_component(const char **path_ptr, char *out, uint32
     return len;
 }
 
-// Resolves every '/'-separated component of path except the last (each must already exist and be
-// a directory), returning the parent directory to search/create in and the final component's raw
-// name. E.g. "docs/notes.txt" resolves "docs" as the parent, "notes.txt" as out_name. A bare name
-// with no '/' resolves to the root as the parent, unchanged from this driver's original behavior.
+// Resolves a path's parent directory and returns its final component name
 static int fat_resolve_parent(const char *path, struct fat_dir_ref *out_parent, char *out_name, uint32_t out_name_size)
 {
     struct fat_dir_ref current = fat_root_dir_ref();
@@ -548,9 +541,7 @@ static int fat_resolve_parent(const char *path, struct fat_dir_ref *out_parent, 
     }
 }
 
-// Resolves every component of dir_path as a directory (used for listing) — unlike
-// fat_resolve_parent, the last component must also already exist and be a directory. An empty
-// string resolves to the root.
+// Resolves a directory path, with an empty path referring to the root
 static int fat_resolve_dir(const char *dir_path, struct fat_dir_ref *out_dir)
 {
     struct fat_dir_ref current = fat_root_dir_ref();
@@ -583,9 +574,7 @@ static int fat_resolve_dir(const char *dir_path, struct fat_dir_ref *out_dir)
     return 0;
 }
 
-// Resolves a possibly '/'-separated path and reports exactly where the final entry lives on disk
-// (sector + index within that sector) — overwrite/append/mkdir need this; plain reads only need
-// the entry's contents, via the wrapper below
+// Resolves a path and returns the final entry's disk location
 static int fat_find_entry_location(const char *path, uint32_t *out_sector, uint32_t *out_offset, struct fat_dir_entry *out_entry)
 {
     struct fat_dir_ref parent;
@@ -604,6 +593,7 @@ static int fat_find_entry(const char *filename, struct fat_dir_entry *out_entry)
     return fat_find_entry_location(filename, &sector, &offset, out_entry);
 }
 
+// Looks up filename and copies its whole contents into buffer in one call
 int fat_read_file(const char *filename, uint8_t *buffer, uint32_t buffer_size)
 {
     if (!fat_ready)
@@ -686,9 +676,7 @@ int fat_open(const char *filename)
         return -1; // not a file
     }
 
-    // The slot scan-and-claim below must be atomic: without this, a timer interrupt could switch
-    // to another task (e.g. task_reap running fat_close_all_for_task) mid-scan and corrupt the
-    // shared table — the same category of bug heap.c's kmalloc/kfree once had, fixed the same way
+    // Make descriptor allocation atomic to prevent task switches from corrupting the shared table
     uint32_t flags = save_and_disable_interrupts();
 
     for (int i = 0; i < MAX_OPEN_FILES; i++)
@@ -771,9 +759,7 @@ int fat_read(int fd, uint8_t *buffer, uint32_t len)
     return (int)bytes_read; // 0 means EOF, distinct from -1 (invalid fd)
 }
 
-// Repositions fd to an absolute byte offset for the next read or write — walks the cluster chain
-// from the file's first cluster each time, matching this driver's existing "simple, re-derive
-// rather than cache" style (fat_get_next_cluster itself always re-reads from disk too)
+// Repositions fd to an absolute offset, walking the cluster chain from the start
 int fat_seek(int fd, uint32_t offset)
 {
     int index = fd - FAT_FD_BASE;
@@ -797,10 +783,8 @@ int fat_seek(int fd, uint32_t offset)
         uint16_t next = fat_get_next_cluster(cluster);
         if (next < 2 || next >= 0xFFF8)
         {
-            // exactly at the end of the chain — stay on the last real cluster with cluster_offset
-            // forced to cluster_size, the same trick FAT_OPEN_APPEND already uses in
-            // fat_open_write so fat_write's own "cluster full" branch allocates fresh space here
-            // instead of needing a special case for "current_cluster is invalid"
+
+            // At chain end, mark the last cluster full so fat_write allocates a new one.
             remaining = cluster_size;
             break;
         }
@@ -808,8 +792,7 @@ int fat_seek(int fd, uint32_t offset)
         remaining -= cluster_size;
     }
 
-    f->current_cluster = cluster; // 0 here only when offset == file_size == 0 — matches fat_write's
-                                   // own "nothing allocated yet" lazy-alloc check
+    f->current_cluster = cluster; // 0 only for an empty file, triggering fat_write's lazy allocation.
     f->cluster_offset = remaining;
     f->file_offset = offset;
     return 0;
@@ -830,8 +813,7 @@ int fat_close(int fd)
     return 0;
 }
 
-// Closes every descriptor still owned by task_id — called by task_reap so a task that exits
-// without calling close() itself doesn't leak a slot out of MAX_OPEN_FILES forever
+// Closes all descriptors owned by a task to prevent leaks on exit.
 void fat_close_all_for_task(int task_id)
 {
     uint32_t flags = save_and_disable_interrupts();
@@ -869,8 +851,7 @@ static void fat_set_cluster_entry(uint16_t cluster, uint16_t value)
     }
 }
 
-// Finds the first free cluster (a zero FAT entry), marks it end-of-chain to claim it, and returns it;
-// returns 0 if the disk is full
+// Allocates the first free cluster, or returns 0 if the disk is full.
 static uint16_t fat_alloc_cluster(void)
 {
     uint32_t total_entries = fat_size_sectors * (ATA_SECTOR_SIZE / 2);
@@ -883,13 +864,7 @@ static uint16_t fat_alloc_cluster(void)
         uint32_t sector = fat_start_lba + (fat_offset / ATA_SECTOR_SIZE);
         uint32_t offset_in_sector = fat_offset % ATA_SECTOR_SIZE;
 
-        // Re-read whenever the needed sector isn't the one already in sector_buf. The old check
-        // here (offset_in_sector == 0) assumed the loop always starts at a sector boundary, but
-        // cluster 2 (the loop's own starting point) lands at offset_in_sector == 4, not 0 — so the
-        // very first iteration skipped the read entirely and scanned uninitialized stack memory as
-        // if it were real FAT entries, sometimes "finding" an already-used cluster as free and
-        // handing it out to two files at once. Confirmed on disk: README.TXT and NEWFILE.TXT ended
-        // up sharing cluster 4 this way, silently corrupting README.TXT's content.
+        // Reload the FAT sector when needed to avoid scanning stale or uninitialized data
         if (sector != loaded_sector)
         {
             if (ata_read_sector(sector, sector_buf) != 0)
@@ -928,9 +903,7 @@ static uint16_t fat_find_last_cluster(uint16_t first_cluster)
     return cluster;
 }
 
-// Finds the first free (deleted or never-used) slot in dir, extending a subdirectory's cluster
-// chain with a fresh zeroed cluster if it's completely full (root can't grow — FAT16's root
-// directory has a fixed size, unlike subdirectories)
+// Finds a free directory slot, extending full subdirectories as needed
 static int fat_alloc_dir_entry_in_dir(struct fat_dir_ref dir, uint32_t *out_sector, uint32_t *out_offset)
 {
     uint8_t sector_buf[ATA_SECTOR_SIZE];
@@ -1010,8 +983,7 @@ static void fat_free_chain(uint16_t first_cluster)
     }
 }
 
-// Creates a new, empty subdirectory at path — the parent must already exist (no "-p" style
-// recursive creation), and the name itself must not already exist as a file or directory
+// Creates an empty subdirectory; the parent must exist and the name must be unused
 int fat_mkdir(const char *path)
 {
     if (!fat_ready)
@@ -1039,9 +1011,7 @@ int fat_mkdir(const char *path)
         return -1; // disk full
     }
 
-    // Zero the new directory's cluster, then write the standard "." (self) and ".." (parent)
-    // entries — makes this readable as a well-formed FAT directory by other tools (mtools etc),
-    // not just by this driver, even though HAROLD's own shell has no cd/cwd to use them yet
+    // Initialize the directory cluster with standard "." and ".." entries
     uint8_t buf[ATA_SECTOR_SIZE];
     uint32_t new_cluster_lba = data_start_lba + (uint32_t)(new_cluster - 2) * sectors_per_cluster;
 
@@ -1140,8 +1110,7 @@ int fat_mkdir(const char *path)
     return 0;
 }
 
-// Creates filename (a possibly '/'-separated path), or opens an existing one per mode; returns a
-// fd usable with fat_write, or -1
+// Creates or opens a file for writing, returning its fd or -1
 int fat_open_write(const char *filename, int mode)
 {
     if (!fat_ready)
@@ -1245,15 +1214,12 @@ int fat_open_write(const char *filename, int mode)
             start_cluster_offset = start_file_size % cluster_size;
             if (start_cluster_offset == 0 && start_file_size > 0)
             {
-                // the last cluster is exactly full — force fat_write's own overflow check to
-                // allocate a fresh cluster before the very next byte, rather than writing offset 0
-                // of the (already full) last cluster and silently overwriting real data
+                // If the last cluster is full, force fat_write to allocate a new one
                 start_cluster_offset = cluster_size;
             }
         }
     }
-    else // FAT_OPEN_MODIFY — keep existing content, but start positioned at the very beginning;
-         // combine with fat_seek to edit anywhere in the file without truncating the rest
+    else // FAT_OPEN_MODIFY preserves content and starts at the beginning for in-place edits
     {
         start_file_size = existing.file_size;
         start_file_offset = 0;
@@ -1369,8 +1335,7 @@ int fat_write(int fd, const uint8_t *buffer, uint32_t len)
         }
     }
 
-    // Persist the updated size now, not just on close — so a task that exits without calling
-    // fat_close (already a documented leak) still leaves a correctly-sized file on disk
+    // Persist the updated size immediately so it remains correct even without fat_close
     if (ata_read_sector(f->dir_entry_sector, sector_buf) == 0)
     {
         struct fat_dir_entry *entries = (struct fat_dir_entry *)sector_buf;
@@ -1403,11 +1368,8 @@ static void fat_short_name_to_display(const struct fat_dir_entry *e, char *out, 
     out[pos] = '\0';
 }
 
-// Returns the index-th real entry (0-based) in the directory named by dir_path ("" for root),
-// deleted/LFN/volume-label/"."/".." entries don't count, preferring its long name when present.
-// No locking around the shared LFN buffer here — currently safe only because the shell serializes
-// filesystem-using tasks.
-int fat_list_entry(const char *dir_path, int index, char *name_out, uint32_t name_out_size, uint32_t *size_out)
+// Returns the index-th visible directory entry, preferring its long name when available
+int fat_list_entry(const char *dir_path, int index, char *name_out, uint32_t name_out_size, uint32_t *size_out, int *is_dir_out)
 {
     if (!fat_ready)
     {
@@ -1464,8 +1426,8 @@ int fat_list_entry(const char *dir_path, int index, char *name_out, uint32_t nam
                 lfn_reset();
                 continue;
             }
-            // "." and ".." are real entries in every subdirectory, but meaningful only for
-            // cd-style navigation this shell doesn't have — just noise in a flat listing
+
+            // Skip "." and ".." since they aren't useful in directory listings
             if (e->name[0] == '.' && (e->name[1] == ' ' || (e->name[1] == '.' && e->name[2] == ' ')))
             {
                 lfn_reset();
@@ -1487,6 +1449,7 @@ int fat_list_entry(const char *dir_path, int index, char *name_out, uint32_t nam
                 }
 
                 *size_out = e->file_size;
+                *is_dir_out = (e->attr & FAT_ATTR_DIRECTORY) ? 1 : 0;
                 lfn_reset();
                 return 0;
             }

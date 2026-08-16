@@ -1,4 +1,4 @@
-// VGA text-mode terminal driver: character output, cursor tracking, scrolling, and hex/decimal printing
+// VGA text-mode terminal driver: character output, cursor tracking, scrolling, and hex/decimal printing.
 
 #include <stdint.h>
 #include <stddef.h>
@@ -39,6 +39,7 @@ static void terminal_scroll(void)
     cursor_row = VGA_HEIGHT - 1;
 }
 
+// Clears the screen and resets the cursor to (0,0)
 void terminal_initialize(void)
 {
     for (int row = 0; row < VGA_HEIGHT; row++)
@@ -53,6 +54,7 @@ void terminal_initialize(void)
     cursor_col = 0;
 }
 
+// Handles one character: printable, '\n', or '\b', with wrap + scroll
 void terminal_putchar(char c)
 {
     // Video memory + cursor position is shared, global state with no other synchronization — the
@@ -103,6 +105,7 @@ void terminal_putchar(char c)
     restore_interrupts(flags);
 }
 
+// Writes a full string via terminal_putchar
 void terminal_writestring(const char *str)
 {
     // Also protected as a whole string, not just per-character — otherwise two tasks' strings
@@ -151,4 +154,31 @@ void terminal_print_dec(uint32_t value)
     {
         terminal_putchar(buffer[--i]);
     }
+}
+
+// Writes len characters starting at (row, col) with a raw VGA attribute byte (0x0F = white on
+// black, 0xF0 = inverted), independent of the sequential cursor/scroll and not mirrored to
+// serial — for a positioned-drawing consumer (a text-mode GUI) managing its own full-screen
+// layout, not appending to a scrolling log. Clips rather than wraps past the screen edges.
+void terminal_draw_text(int row, int col, const char *text, int len, uint8_t attr)
+{
+    if (row < 0 || row >= VGA_HEIGHT)
+    {
+        return;
+    }
+
+    // Shared global VGA state, same reasoning as terminal_putchar's own locking
+    uint32_t flags = save_and_disable_interrupts();
+
+    for (int i = 0; i < len; i++)
+    {
+        int c = col + i;
+        if (c < 0 || c >= VGA_WIDTH)
+        {
+            continue; // clip rather than wrap into the next row or overrun the buffer
+        }
+        video_memory[row * VGA_WIDTH + c] = (uint16_t)(uint8_t)text[i] | ((uint16_t)attr << 8);
+    }
+
+    restore_interrupts(flags);
 }

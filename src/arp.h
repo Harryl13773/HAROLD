@@ -1,4 +1,4 @@
-// Public interface for ARP resolution, cache lookups, and request handling
+// Public interface for ARP resolution, cache lookups, and request handling.
 
 #ifndef ARP_H
 #define ARP_H

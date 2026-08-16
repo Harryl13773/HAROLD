@@ -1,7 +1,10 @@
+# Builds the HAROLD kernel and its userspace ELF programs, and drives QEMU to run them.
+
 # Tools
-CC      = x86_64-elf-gcc
-AS      = nasm
-LD      = x86_64-elf-ld
+CC            = x86_64-elf-gcc
+AS            = nasm
+LD            = x86_64-elf-ld
+GRUB_MKRESCUE = i686-elf-grub-mkrescue
 
 # flags
 CFLAGS     = -ffreestanding -O2 -Wall -Wextra -m32 -mgeneral-regs-only
@@ -30,7 +33,7 @@ iso: kernel.bin
 	mkdir -p isodir/boot/grub
 	cp kernel.bin isodir/boot/kernel.bin
 	cp grub.cfg isodir/boot/grub/grub.cfg
-	grub-mkrescue -o harold.iso isodir
+	$(GRUB_MKRESCUE) -o harold.iso isodir
 
 # A blank virtual disk for the ATA driver — created once, then persists across rebuilds
 disk.img:
@@ -159,13 +162,20 @@ userspace/edit.elf: userspace/edit.c userspace/libc.c userspace/libc.h userspace
 	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
 	$(LD) -m elf_i386 -T userspace/linker.ld userspace/edit.o userspace/libc.o -o userspace/edit.elf
 
+# A text-mode desktop: box-drawing chrome, a live clock, a real directory listing as clickable
+# labels, and a taskbar — reuses the RTC/mouse drivers and the editor, all built this session
+userspace/gui.elf: userspace/gui.c userspace/libc.c userspace/libc.h userspace/linker.ld
+	$(CC) $(USERCFLAGS) -c userspace/gui.c -o userspace/gui.o
+	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
+	$(LD) -m elf_i386 -T userspace/linker.ld userspace/gui.o userspace/libc.o -o userspace/gui.elf
+
 # Run with QEMU's built-in multiboot loader (the shortcut you've been using)
 run: kernel.bin disk.img
 	qemu-system-x86_64 -kernel kernel.bin -drive file=disk.img,format=raw,if=ide -netdev user,id=n0 -device rtl8139,netdev=n0 -object filter-dump,id=f0,netdev=n0,file=harold_net.pcap
 
 # Run through the real GRUB + real ISO path — the closer proxy for real hardware
 run-iso: iso disk.img
-	qemu-system-x86_64 -cdrom harold.iso -drive file=disk.img,format=raw,if=ide -netdev user,id=n0 -device rtl8139,netdev=n0 -object filter-dump,id=f0,netdev=n0,file=harold_net.pcap
+	qemu-system-x86_64 -boot d -cdrom harold.iso -drive file=disk.img,format=raw,if=ide -netdev user,id=n0 -device rtl8139,netdev=n0 -object filter-dump,id=f0,netdev=n0,file=harold_net.pcap
 
 # Real bidirectional host<->guest networking via macOS's vmnet framework — needs sudo, unlike run/run-iso.
 # No fixed subnet requested here on purpose — see the status doc for how to discover what macOS assigns.
@@ -173,7 +183,7 @@ run-vmnet: kernel.bin disk.img
 	sudo qemu-system-x86_64 -kernel kernel.bin -drive file=disk.img,format=raw,if=ide -netdev vmnet-host,id=n0 -device rtl8139,netdev=n0 -object filter-dump,id=f0,netdev=n0,file=harold_net.pcap
 
 clean:
-	rm -f *.o kernel.bin harold.iso userspace/test.o userspace/inference.o userspace/cat.o userspace/ls.o userspace/crash.o userspace/netecho.o userspace/save.o userspace/readsaved.o userspace/append.o userspace/overwrite.o userspace/writer.o userspace/spy.o userspace/leakfd.o userspace/malloctest.o userspace/mkdir.o userspace/poke.o userspace/nslookup.o userspace/date.o userspace/mousetest.o userspace/edit.o userspace/libc.o userspace/test.elf userspace/inference.elf userspace/cat.elf userspace/ls.elf userspace/crash.elf userspace/netecho.elf userspace/save.elf userspace/readsaved.elf userspace/append.elf userspace/overwrite.elf userspace/writer.elf userspace/spy.elf userspace/leakfd.elf userspace/malloctest.elf userspace/mkdir.elf userspace/poke.elf userspace/nslookup.elf userspace/date.elf userspace/mousetest.elf userspace/edit.elf
+	rm -f *.o kernel.bin harold.iso userspace/test.o userspace/inference.o userspace/cat.o userspace/ls.o userspace/crash.o userspace/netecho.o userspace/save.o userspace/readsaved.o userspace/append.o userspace/overwrite.o userspace/writer.o userspace/spy.o userspace/leakfd.o userspace/malloctest.o userspace/mkdir.o userspace/poke.o userspace/nslookup.o userspace/date.o userspace/mousetest.o userspace/edit.o userspace/gui.o userspace/libc.o userspace/test.elf userspace/inference.elf userspace/cat.elf userspace/ls.elf userspace/crash.elf userspace/netecho.elf userspace/save.elf userspace/readsaved.elf userspace/append.elf userspace/overwrite.elf userspace/writer.elf userspace/spy.elf userspace/leakfd.elf userspace/malloctest.elf userspace/mkdir.elf userspace/poke.elf userspace/nslookup.elf userspace/date.elf userspace/mousetest.elf userspace/edit.elf userspace/gui.elf
 	rm -rf isodir
 
 .PHONY: all run run-iso iso clean

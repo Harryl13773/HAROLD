@@ -1,4 +1,4 @@
-// UDP layer: datagram send/receive over IP and a port-7 echo service
+// UDP layer: datagram send/receive over IP and a port-7 echo service.
 
 #include <stdint.h>
 #include "terminal.h"
@@ -120,6 +120,8 @@ void udp_receive(const uint8_t source_ip[4], const uint8_t source_mac[6], const 
     }
 }
 
+// Arms a one-shot capture for the next datagram arriving on local_port, so a synchronous
+// request/reply protocol (like DNS) can correlate its own response
 void udp_arm_response_capture(uint16_t local_port)
 {
     capture_ready = 0;
@@ -127,6 +129,8 @@ void udp_arm_response_capture(uint16_t local_port)
     capture_armed = 1;
 }
 
+// Blocks (via hlt) until the armed capture receives a datagram or timeout_ticks elapses; returns
+// the payload length copied into buf and fills out_source_ip, or -1 on timeout
 int udp_wait_for_response(uint8_t *buf, uint32_t buf_size, uint8_t out_source_ip[4], uint32_t timeout_ticks)
 {
     uint32_t start = pit_get_ticks();

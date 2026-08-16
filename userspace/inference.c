@@ -1,8 +1,9 @@
-// Forward pass for the trained 64-16-10 net, using the same Q16.16 integer math export.py verified
+// Forward pass for the trained 64-16-10 net, using the same Q16.16 integer math export.py verified.
 
 #include "libc.h"
 #include "model_data.h"
 
+// Runs the two-layer network on one flattened image and returns the predicted digit
 static int forward_and_classify(const int32_t *image)
 {
     int32_t hidden[HIDDEN_SIZE];
@@ -40,6 +41,7 @@ static int forward_and_classify(const int32_t *image)
     return best_digit;
 }
 
+// Appends s to line at *len, advancing *len
 static void append(char *line, int *len, const char *s)
 {
     while (*s != '\0')
@@ -48,6 +50,7 @@ static void append(char *line, int *len, const char *s)
     }
 }
 
+// Appends value's decimal digits to line at *len, advancing *len
 static void append_int(char *line, int *len, int value)
 {
     char numbuf[12];

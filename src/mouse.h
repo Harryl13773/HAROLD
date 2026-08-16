@@ -1,4 +1,4 @@
-// Public interface for the PS/2 mouse driver
+// Public interface for the PS/2 mouse driver.
 
 #ifndef MOUSE_H
 #define MOUSE_H

@@ -1,4 +1,4 @@
-// Public interface for the CMOS Real-Time Clock driver
+// Public interface for the CMOS Real-Time Clock driver.
 
 #ifndef RTC_H
 #define RTC_H

@@ -1,6 +1,8 @@
-// Minimal DNS resolver: encodes a single A-record query, sends it over UDP to a configured
-// server, and parses the first A record out of the reply — enough to turn a hostname into an
-// IPv4 address, nothing more (no caching, no AAAA/CNAME following, no retries)
+/*
+Minimal DNS resolver: encodes a single A-record query, sends it over UDP to a configured
+server, and parses the first A record out of the reply — enough to turn a hostname into an
+IPv4 address, nothing more (no caching, no AAAA/CNAME following, no retries).
+*/
 
 #include <stdint.h>
 #include "terminal.h"
@@ -10,14 +12,13 @@
 
 #define DNS_PORT 53
 #define DNS_QUERY_LOCAL_PORT 53000 // fixed — only one query is ever in flight at a time on this stack
-#define DNS_TIMEOUT_TICKS 200      // 2s at the configured 100Hz PIT rate — generous, a real DNS
-                                   // server is usually several hops away, unlike everything else
-                                   // this project talks to
+#define DNS_TIMEOUT_TICKS 200      //// Wait up to 2s for a DNS response
 #define DNS_MAX_NAME_LEN 253       // RFC 1035's own limit on a full domain name
 
 static uint8_t dns_server_ip[4] = {0, 0, 0, 0};
 static int dns_server_configured = 0;
 
+// Sets the DNS server to query call before dns_resolve
 void dns_set_server(const uint8_t server_ip[4])
 {
     for (int i = 0; i < 4; i++)
@@ -27,9 +28,7 @@ void dns_set_server(const uint8_t server_ip[4])
     dns_server_configured = 1;
 }
 
-// Encodes "www.example.com" into DNS's length-prefixed label wire format:
-// 3 'w' 'w' 'w' 7 'e' 'x' 'a' 'm' 'p' 'l' 'e' 3 'c' 'o' 'm' 0
-// Returns the encoded length, or -1 on an oversized/malformed name or output buffer overflow
+// Encodes a domain name into DNS label format; returns its length or -1 on error
 static int dns_encode_name(const char *hostname, uint8_t *out, int out_size)
 {
     int out_pos = 0;
@@ -72,10 +71,12 @@ static int dns_encode_name(const char *hostname, uint8_t *out, int out_size)
     {
         return -1;
     }
-    out[out_pos++] = 0; // the root label — terminates the name
+    out[out_pos++] = 0; // the root label: terminates the name
+
     return out_pos;
 }
 
+// Resolves hostname to an IPv4 address via a single A-record query
 int dns_resolve(const char *hostname, uint8_t out_ip[4])
 {
     if (!dns_server_configured)
@@ -120,8 +121,7 @@ int dns_resolve(const char *hostname, uint8_t out_ip[4])
     query[qpos++] = 0x00; // QCLASS = IN
     query[qpos++] = 0x01;
 
-    udp_arm_response_capture(DNS_QUERY_LOCAL_PORT); // arm before sending — the reply could in
-                                                     // principle arrive before udp_send even returns
+    udp_arm_response_capture(DNS_QUERY_LOCAL_PORT); // Arm first in case the reply arrives immediately
     udp_send(DNS_QUERY_LOCAL_PORT, DNS_PORT, dns_server_ip, dns_mac, query, (uint16_t)qpos);
 
     terminal_writestring("DNS: query sent for ");
@@ -146,9 +146,8 @@ int dns_resolve(const char *hostname, uint8_t out_ip[4])
     {
         if (response_source_ip[i] != dns_server_ip[i])
         {
-            // Anything landing on the query's local port gets captured regardless of sender — this
-            // is the actual check that it's really our configured server answering, not some other
-            // stray traffic that happened to hit this port
+
+            // Only accept replies from our configured DNS server
             terminal_writestring("DNS: reply came from an unexpected source, ignoring\n");
             return -1;
         }
@@ -161,8 +160,7 @@ int dns_resolve(const char *hostname, uint8_t out_ip[4])
         return -1;
     }
 
-    // Skip the question section (the name we sent, echoed back, plus QTYPE+QCLASS) to reach the
-    // answer section — re-walking labels the same way dns_encode_name built them
+    // Skip the echoed question section to reach the DNS answers
     int pos = 12;
     while (pos < response_len && response[pos] != 0)
     {
@@ -170,12 +168,11 @@ int dns_resolve(const char *hostname, uint8_t out_ip[4])
     }
     pos += 1 + 4; // the root label byte, then QTYPE+QCLASS
 
-    // Walk answer records looking for the first A record (TYPE=1) — skip anything else (CNAME,
-    // AAAA, etc.) rather than trying to follow it
+    // Find the first A record, skipping other record types
     for (uint16_t a = 0; a < ancount && pos < response_len; a++)
     {
-        // NAME here is almost always a 2-byte compression pointer (0xC0 xx) rather than an inline
-        // name, but handle both rather than assume
+
+        // Skip NAME, handling either a compression pointer or inline name
         if ((response[pos] & 0xC0) == 0xC0)
         {
             pos += 2;

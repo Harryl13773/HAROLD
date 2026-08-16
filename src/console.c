@@ -1,9 +1,10 @@
-// Merges keyboard and serial into a single interactive input source
+// Merges keyboard and serial into a single interactive input source.
 
 #include "keyboard.h"
 #include "serial.h"
 #include "console.h"
 
+// Blocks until a character is available from either the keyboard or the serial port
 char console_read_char(void)
 {
     __asm__ volatile("sti"); // this may run with IF=0 if called from inside a syscall

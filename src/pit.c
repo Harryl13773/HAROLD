@@ -1,4 +1,4 @@
-// Programmable Interval Timer driver: configures the tick rate and drives the scheduler on each IRQ0
+// Programmable Interval Timer driver: configures the tick rate and drives the scheduler on each IRQ0.
 
 #include <stdint.h>
 #include "io.h"
@@ -20,6 +20,7 @@ static void pit_handler(void)
     schedule();
 }
 
+// Configures the PIT to fire IRQ0 at the given frequency, in Hz
 void pit_init(uint32_t frequency)
 {
     configured_frequency = frequency;
@@ -32,11 +33,13 @@ void pit_init(uint32_t frequency)
     irq_set_handler(0, pit_handler);
 }
 
+// Returns how many ticks have occurred since boot
 uint32_t pit_get_ticks(void)
 {
     return tick_count;
 }
 
+// Returns the frequency pit_init was last configured with
 uint32_t pit_get_frequency(void)
 {
     return configured_frequency;

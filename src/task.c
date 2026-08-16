@@ -1,4 +1,4 @@
-// Cooperative/preemptive round-robin task scheduler: task creation, context switching, sleep, wait, and reaping
+// Cooperative/preemptive round-robin task scheduler: task creation, context switching, sleep, wait, and reaping.
 
 #include <stdint.h>
 #include <stddef.h>

@@ -1,4 +1,4 @@
-// IRQ dispatch: remapped PIC interrupt stubs, PIC EOI acknowledgment, and handler registration
+// IRQ dispatch: remapped PIC interrupt stubs, PIC EOI acknowledgment, and handler registration.
 
 #include <stdint.h>
 #include "idt.h"
@@ -34,6 +34,7 @@ struct registers
 // One slot per IRQ line, so drivers can register without editing this file
 static irq_handler_t irq_routines[16] = {0};
 
+// Lets a driver (keyboard, timer, etc.) attach itself to a specific IRQ line
 void irq_set_handler(int irq, irq_handler_t handler)
 {
     irq_routines[irq] = handler;
@@ -57,6 +58,7 @@ void irq_handler(struct registers *regs)
     }
 }
 
+// Registers all 16 IRQ stubs into the IDT
 void irq_install(void)
 {
     idt_set_gate(32, (uint32_t)irq0, 0x08, 0x8E);

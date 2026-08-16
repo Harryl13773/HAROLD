@@ -1,4 +1,4 @@
-// Inline x86 I/O port access (inb/outb/inw/outw/inl/outl) and interrupt-flag save/restore helpers
+// Inline x86 I/O port access (inb/outb/inw/outw/inl/outl) and interrupt-flag save/restore helpers.
 
 #ifndef IO_H
 #define IO_H

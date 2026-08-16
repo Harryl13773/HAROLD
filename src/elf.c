@@ -1,4 +1,4 @@
-// ELF32 loader: parses a static executable, maps its segments into a fresh address space, and enters ring 3
+// ELF32 loader: parses a static executable, maps its segments into a fresh address space, and enters ring 3.
 
 #include <stdint.h>
 #include "fat.h"
@@ -50,6 +50,7 @@ struct elf32_program_header
 
 #define ELF_MAX_FILE_SIZE 65536
 
+// Loads a static ELF32 executable from the FAT volume and runs it in ring 3, passing argc/argv through to it
 int elf_load_and_run(const char *filename, int argc, char *const argv[])
 {
     uint8_t *file_buf = (uint8_t *)kmalloc(ELF_MAX_FILE_SIZE);
@@ -115,11 +116,7 @@ int elf_load_and_run(const char *filename, int argc, char *const argv[])
             continue;
         }
 
-        // Each process gets its own private page table for this segment's 4MB region, pre-populated
-        // with the kernel's own mappings (so kernel/heap addresses stay correctly accessible), with
-        // fresh, genuinely private physical frames mapped in for the segment's own address range —
-        // this is what makes two processes at the same virtual address (0x300000 for all of them)
-        // actually backed by different physical memory, rather than secretly sharing it
+        // Give each process private physical memory while preserving kernel mappings
         uint32_t *dir = task_get_current_page_directory();
         uint32_t *table = paging_get_or_create_user_table(dir, ph->p_vaddr);
         if (table == NULL)
@@ -133,8 +130,7 @@ int elf_load_and_run(const char *filename, int argc, char *const argv[])
         uint32_t end_addr = ph->p_vaddr + ph->p_memsz;
         uint32_t end_page = (end_addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
-        // The ring-3 stack lives at a fixed page just below the 4MB paging ceiling (see
-        // usermode.h) — refuse rather than risk a segment silently overlapping and corrupting it
+        // Reject segments that would overlap the ring-3 stack
         if (end_page > USER_STACK_VADDR)
         {
             terminal_writestring("ELF: segment too large, would collide with the user stack\n");
@@ -160,10 +156,7 @@ int elf_load_and_run(const char *filename, int argc, char *const argv[])
                 return -1;
             }
 
-            // pmm_free_frame only marks a frame available again — it never clears its contents,
-            // so a reused frame would otherwise still carry whatever the previous process left
-            // there. Zeroing here, before this process ever touches it, is what actually prevents
-            // one process's data from leaking into another's through a recycled physical frame.
+            // Zero reused frames to prevent data leaking between processes
             uint8_t *frame_ptr = (uint8_t *)frame;
             for (uint32_t z = 0; z < PAGE_SIZE; z++)
             {
@@ -173,9 +166,7 @@ int elf_load_and_run(const char *filename, int argc, char *const argv[])
             paging_map_user_page(table, page_addr, frame);
         }
 
-        // The mappings above only take effect once the CPU's TLB is flushed — reloading CR3 does
-        // that as a side effect. Without this, the segment copy below could still hit stale,
-        // cached translations from before this task's private table existed.
+        // Reload CR3 to flush stale TLB mappings before copying the segment
         paging_switch_directory(dir);
 
         uint8_t *dest = (uint8_t *)ph->p_vaddr;

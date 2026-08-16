@@ -1,4 +1,4 @@
-// CPU exception (ISR 0-31) handlers: prints a fault banner, then isolates the faulting task or halts the kernel
+// CPU exception (ISR 0-31) handlers: prints a fault banner, then isolates the faulting task or halts the kernel.
 
 #include <stdint.h>
 #include "idt.h"
@@ -116,10 +116,7 @@ static inline uint32_t read_cr2(void)
 // Called by every exception stub — reports the fault, then isolates or halts depending on CPL
 void fault_handler(struct registers *regs)
 {
-    // Logged through the normal scrolling path (and, by extension, to serial) so this fault's
-    // place in the log always reflects when it actually happened — the fixed-row VGA banner below
-    // is still shown for visibility, but its screen position alone can't be trusted for timing:
-    // it survives on-screen independent of everything scrolling past it afterward
+    // Log normally for accurate timing; the fixed VGA banner is only for visibility
     terminal_writestring("\n[FAULT] tick=");
     terminal_print_dec(pit_get_ticks());
     terminal_writestring(" task=");

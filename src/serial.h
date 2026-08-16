@@ -1,4 +1,4 @@
-// Public interface for the COM1 serial driver — a persistent, non-scrolling log independent of VGA
+// Public interface for the COM1 serial driver — a persistent, non-scrolling log independent of VGA.
 
 #ifndef SERIAL_H
 #define SERIAL_H

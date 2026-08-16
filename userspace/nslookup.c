@@ -1,8 +1,9 @@
 // Resolves a hostname to an IPv4 address via dns_resolve() and prints it dotted-quad — proves the
-// DNS resolver and gateway-aware routing work end-to-end, not just in isolation
+// DNS resolver and gateway-aware routing work end-to-end, not just in isolation.
 
 #include "libc.h"
 
+// Prints a 4-byte IPv4 address as a dotted quad
 static void print_ip(unsigned char ip[4])
 {
     char num[12];

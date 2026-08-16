@@ -1,6 +1,6 @@
 // CMOS Real-Time Clock driver: reads the current wall-clock date/time from the MC146818-compatible
 // RTC via ports 0x70 (index) / 0x71 (data) — no interrupts, polled on demand, same as this
-// project's other simple hardware reads (ATA sector reads, PCI config space)
+// project's other simple hardware reads (ATA sector reads, PCI config space).
 
 #include <stdint.h>
 #include "io.h"
@@ -18,6 +18,7 @@
 #define CMOS_REG_STATUS_A 0x0A
 #define CMOS_REG_STATUS_B 0x0B
 
+// Reads one CMOS register by index
 static uint8_t cmos_read(uint8_t reg)
 {
     outb(CMOS_INDEX, reg);
@@ -43,6 +44,7 @@ struct cmos_snapshot
     uint8_t second, minute, hour, day, month, year;
 };
 
+// Reads every time field in one pass, for comparison against a second read
 static void cmos_read_snapshot(struct cmos_snapshot *s)
 {
     s->second = cmos_read(CMOS_REG_SECONDS);
@@ -53,12 +55,15 @@ static void cmos_read_snapshot(struct cmos_snapshot *s)
     s->year = cmos_read(CMOS_REG_YEAR);
 }
 
+// True if two snapshots agree on every field, meaning the RTC wasn't ticking mid-read
 static int snapshots_equal(const struct cmos_snapshot *a, const struct cmos_snapshot *b)
 {
     return a->second == b->second && a->minute == b->minute && a->hour == b->hour &&
            a->day == b->day && a->month == b->month && a->year == b->year;
 }
 
+// Reads the current date/time from the CMOS RTC, correcting for BCD encoding, 12-hour mode, and
+// the update-in-progress race (reads repeatedly until two consecutive snapshots agree)
 void rtc_read(struct rtc_time *out)
 {
     // Standard "read until stable" technique: wait out any in-progress update, take a snapshot,

@@ -1,4 +1,4 @@
-// Public interface for installing the int 0x80 syscall gate
+// Public interface for installing the int 0x80 syscall gate.
 
 #ifndef SYSCALL_H
 #define SYSCALL_H

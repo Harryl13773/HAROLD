@@ -1,4 +1,4 @@
-// Kernel heap allocator: a first-fit free list with block splitting and coalescing
+// Kernel heap allocator: a first-fit free list with block splitting and coalescing.
 
 #include <stdint.h>
 #include <stddef.h>
@@ -69,9 +69,7 @@ static void split_block(struct block_header *block, size_t size)
     block->size = size;
 }
 
-// First-fit search through the block list for a free block big enough for size.
-// Interrupts stay disabled for the walk — a preempted mid-split heap would
-// corrupt the list for whichever task runs next and also touches it.
+// Finds the first free block large enough, with interrupts disabled to prevent heap corruption
 void *kmalloc(size_t size)
 {
     if (!heap_ready || size == 0)

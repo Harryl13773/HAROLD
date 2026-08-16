@@ -1,4 +1,4 @@
-// Physical memory manager: bitmap-based frame allocator built from the multiboot memory map
+// Physical memory manager: bitmap-based frame allocator built from the multiboot memory map.
 
 #include <stdint.h>
 #include "pmm.h"

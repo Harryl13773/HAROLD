@@ -1,4 +1,4 @@
-// Remaps the 8259 PICs so hardware IRQs land at vectors 32-47 instead of conflicting with CPU exceptions
+// Remaps the 8259 PICs so hardware IRQs land at vectors 32-47 instead of conflicting with CPU exceptions.
 
 #include <stdint.h>
 #include "io.h"

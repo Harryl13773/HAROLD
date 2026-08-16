@@ -1,4 +1,4 @@
-// Public interface for the kernel heap allocator (kmalloc/kfree)
+// Public interface for the kernel heap allocator (kmalloc/kfree).
 
 #ifndef HEAP_H
 #define HEAP_H

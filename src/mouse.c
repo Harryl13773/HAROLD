@@ -1,7 +1,9 @@
-// PS/2 mouse driver: standard 3-byte packet decoding over the 8042 controller's second (auxiliary)
-// port on IRQ12. Unlike keyboard.c, which just registers an IRQ handler (the first PS/2 port is
-// already enabled by BIOS POST on real and virtual hardware alike), the second port is not
-// auto-enabled — this driver has to do that handshake itself.
+/*
+PS/2 mouse driver: standard 3-byte packet decoding over the 8042 controller's second (auxiliary)
+port on IRQ12. Unlike keyboard.c, which just registers an IRQ handler (the first PS/2 port is
+already enabled by BIOS POST on real and virtual hardware alike), the second port is not
+auto-enabled, this driver has to do that handshake itself.
+*/
 
 #include <stdint.h>
 #include "io.h"
@@ -17,6 +19,7 @@
 #define PS2_STATUS_OUTPUT_FULL 0x01 // set when the controller has a byte ready to read
 #define PS2_STATUS_INPUT_FULL 0x02  // set while the controller hasn't yet consumed our last write
 
+// Blocks until the controller has a byte ready to read
 static void ps2_wait_output(void)
 {
     while (!(inb(PS2_STATUS_PORT) & PS2_STATUS_OUTPUT_FULL))
@@ -24,6 +27,7 @@ static void ps2_wait_output(void)
     }
 }
 
+// Blocks until the controller is ready to accept a byte
 static void ps2_wait_input(void)
 {
     while (inb(PS2_STATUS_PORT) & PS2_STATUS_INPUT_FULL)
@@ -31,18 +35,21 @@ static void ps2_wait_input(void)
     }
 }
 
+// Sends a command byte to the 8042 controller itself
 static void ps2_write_command(uint8_t cmd)
 {
     ps2_wait_input();
     outb(PS2_COMMAND_PORT, cmd);
 }
 
+// Sends a data byte to the currently selected PS/2 port
 static void ps2_write_data(uint8_t data)
 {
     ps2_wait_input();
     outb(PS2_DATA_PORT, data);
 }
 
+// Reads one byte back from the controller
 static uint8_t ps2_read_data(void)
 {
     ps2_wait_output();
@@ -63,6 +70,7 @@ static struct mouse_packet mouse_buffer[MOUSE_BUFFER_SIZE];
 static volatile int mouse_head = 0;
 static volatile int mouse_tail = 0;
 
+// Queues a decoded packet for mouse_read_packet; drops it if the buffer is full
 static void mouse_buffer_push(struct mouse_packet p)
 {
     int next = (mouse_head + 1) % MOUSE_BUFFER_SIZE;
@@ -77,12 +85,13 @@ static void mouse_buffer_push(struct mouse_packet p)
 static uint8_t packet_bytes[3];
 static int packet_index = 0;
 
+// Fires on every IRQ12 — accumulates one 3-byte packet, then decodes and queues it
 static void mouse_handler(void)
 {
     uint8_t data = inb(PS2_DATA_PORT);
 
     if (packet_index == 0 && !(data & 0x08)) // bit 3 is always set on a real byte 0 — a cheap
-                                              // sync check; if it's clear, this can't be a byte 0
+                                             // sync check; if it's clear, this can't be a byte 0
     {
         return; // out of sync — drop it and keep waiting for a real byte 0
     }
@@ -111,14 +120,23 @@ static void mouse_handler(void)
     mouse_buffer_push(p);
 }
 
+// Enables the second PS/2 port for a mouse, sets default settings, enables data reporting, and
+// wires up its IRQ12 handler — call once at boot, after irq_install()/pic_remap()
 void mouse_install(void)
 {
     ps2_write_command(0xA8); // enable the second (auxiliary/mouse) PS/2 port
 
+    // Enable the second port's clock only for now (0 = enabled — the sense is inverted). IRQ12
+    // stays off at the controller until the handshake below is done: with it on early, the
+    // controller raises IRQ12 for the handshake's own ACK bytes while the PIC line is still
+    // masked, the 8259 latches that as a pending request, and unmasking later delivers it as a
+    // spurious interrupt that re-reads the (already polled-and-drained) stale ACK byte — which
+    // then desyncs real packet framing, since an ACK (0xFA) happens to pass the byte-0 sync
+    // check. Polling for the handshake ACKs below works fine regardless of the IRQ-enable bit;
+    // that bit only gates interrupt generation, not data availability.
     ps2_write_command(0x20); // "read controller configuration byte"
     uint8_t config = ps2_read_data();
-    config |= 0x02;  // enable IRQ12 (second port interrupt)
-    config &= ~0x20; // enable the second port's clock (0 = enabled — the sense is inverted)
+    config &= ~0x20;         // enable the second port's clock
     ps2_write_command(0x60); // "write controller configuration byte"
     ps2_write_data(config);
 
@@ -126,17 +144,27 @@ void mouse_install(void)
     mouse_send_command(0xF4); // "enable data reporting" — no packets arrive at all without this
 
     irq_set_handler(12, mouse_handler);
+
+    ps2_write_command(0x20);
+    config = ps2_read_data();
+    config |= 0x02; // now enable IRQ12 (second port interrupt) — handshake is done, so there's
+                    // nothing already-drained left for the PIC to latch and re-deliver stale
+    ps2_write_command(0x60);
+    ps2_write_data(config);
+
     pic_unmask_irq(12); // nothing has used this line before — don't assume the BIOS left it
-                         // unmasked, same lesson as IRQ4/COM1 from the serial RX work
+                        // unmasked, same lesson as IRQ4/COM1 from the serial RX work
 
     terminal_writestring("Mouse: PS/2 mouse initialized\n");
 }
 
+// True if a decoded packet is waiting in the buffer without blocking
 int mouse_has_packet(void)
 {
     return mouse_head != mouse_tail;
 }
 
+// Blocks (via hlt, not a busy-spin) until a packet is available, then returns it
 struct mouse_packet mouse_read_packet(void)
 {
     __asm__ volatile("sti"); // this may run with IF=0 if called from inside a syscall

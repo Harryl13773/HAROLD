@@ -1,4 +1,4 @@
-// Public interface for the UDP layer
+// Public interface for the UDP layer.
 
 #ifndef UDP_H
 #define UDP_H

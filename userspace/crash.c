@@ -1,4 +1,4 @@
-// Writes to memory well past the 4MB identity-mapped region — guaranteed page fault, unlike a divide-by-zero the optimizer can dodge
+// Writes to memory well past the 4MB identity-mapped region — guaranteed page fault, unlike a divide-by-zero the optimizer can dodge.
 
 #include "libc.h"
 

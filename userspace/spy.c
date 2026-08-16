@@ -1,9 +1,10 @@
 // Reads the same two raw addresses writer.elf wrote its secrets to, without ever writing to
 // either first — if isolation is working, both read whatever a fresh physical frame contains,
-// not the secret
+// not the secret.
 
 #include "libc.h"
 
+// Prints label, then whatever is actually at raw (up to 32 bytes or a NUL)
 static void read_and_report(const char *label, volatile char *raw)
 {
     write(label, strlen(label));

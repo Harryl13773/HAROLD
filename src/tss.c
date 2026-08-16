@@ -1,4 +1,4 @@
-// Sets up the Task State Segment used for ring3->ring0 stack switches on interrupts/syscalls
+// Sets up the Task State Segment used for ring3->ring0 stack switches on interrupts/syscalls.
 
 #include <stdint.h>
 #include <stddef.h>
@@ -16,6 +16,7 @@ static void tss_flush(void)
     __asm__ volatile("ltr %%ax" : : "a"((uint16_t)GDT_TSS));
 }
 
+// Fills in the TSS and loads the task register
 void tss_install(void)
 {
     // Explicitly zeroed rather than relying on .bss being pre-cleared
@@ -31,6 +32,7 @@ void tss_install(void)
     tss_flush();
 }
 
+// Updates the kernel stack used on the next ring3->ring0 transition
 void tss_set_kernel_stack(uint32_t esp0)
 {
     tss.esp0 = esp0;

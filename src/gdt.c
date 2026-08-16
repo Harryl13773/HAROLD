@@ -1,4 +1,4 @@
-// Sets up the Global Descriptor Table: null, kernel code/data, user code/data, and TSS descriptors
+// Sets up the Global Descriptor Table: null, kernel code/data, user code/data, and TSS descriptors.
 
 #include <stdint.h>
 #include "gdt.h"
@@ -41,6 +41,7 @@ static void gdt_set_gate(int num, uint32_t base, uint32_t limit, uint8_t access,
     gdt[num].access = access;
 }
 
+// Builds and loads the null, kernel, user, and TSS descriptors
 void gdt_install(void)
 {
     gp.limit = (sizeof(struct gdt_entry) * GDT_ENTRY_COUNT) - 1;

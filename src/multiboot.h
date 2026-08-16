@@ -1,4 +1,4 @@
-// Multiboot info/memory-map structure layouts and the parser's public interface
+// Multiboot info/memory-map structure layouts and the parser's public interface.
 
 #ifndef MULTIBOOT_H
 #define MULTIBOOT_H

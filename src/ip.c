@@ -1,4 +1,4 @@
-// IPv4 layer: checksums, header build/send over Ethernet, and receive dispatch to ICMP/UDP/TCP
+// IPv4 layer: checksums, header build/send over Ethernet, and receive dispatch to ICMP/UDP/TCP.
 
 #include <stdint.h>
 #include "terminal.h"
@@ -35,6 +35,7 @@ void ip_get_address(uint8_t out_ip[4])
     }
 }
 
+// Sets our subnet mask — defaults to 255.255.255.0 (/24) until called
 void ip_set_netmask(const uint8_t mask[4])
 {
     for (int i = 0; i < 4; i++)
@@ -43,6 +44,7 @@ void ip_set_netmask(const uint8_t mask[4])
     }
 }
 
+// Sets the default gateway, and marks it configured — call before anything needs to reach an off-subnet address
 void ip_set_gateway(const uint8_t gateway[4])
 {
     for (int i = 0; i < 4; i++)
@@ -52,6 +54,7 @@ void ip_set_gateway(const uint8_t gateway[4])
     gateway_configured = 1;
 }
 
+// Resolves the MAC for dest_ip directly or through the gateway
 int ip_resolve_route(const uint8_t dest_ip[4], uint8_t out_mac[6])
 {
     int same_subnet = 1;
@@ -75,8 +78,7 @@ int ip_resolve_route(const uint8_t dest_ip[4], uint8_t out_mac[6])
         return 0;
     }
 
-    // dest_ip stays in the IP header exactly as given by the caller — only the link-layer
-    // destination changes, to the gateway, which is responsible for routing it onward from here
+    // Keep dest_ip in the IP header; only route the frame through the gateway MAC
     return arp_resolve(our_gateway, out_mac);
 }
 
@@ -197,7 +199,7 @@ void ip_receive(const uint8_t *frame, int frame_len)
 
     uint16_t ip_total_length = ((uint16_t)ip_hdr[2] << 8) | ip_hdr[3];    // the packet's true size, per the IP header itself
     int frame_payload_available = frame_len - ETH_HEADER_LEN - ihl_bytes; // what actually arrived, may include Ethernet padding
-    int declared_payload_len = (int)ip_total_length - ihl_bytes;          // what the IP header says is real — this is the trustworthy one
+    int declared_payload_len = (int)ip_total_length - ihl_bytes;          // what the IP header says is real
 
     int payload_len = declared_payload_len;
     if (payload_len > frame_payload_available) // never trust a declared length past what was actually delivered

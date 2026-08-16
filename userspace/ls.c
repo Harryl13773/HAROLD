@@ -60,7 +60,8 @@ void _start(int argc, char **argv)
 
     while (1)
     {
-        int size = listdir(dir_path, index, name, sizeof(name));
+        int is_dir;
+        int size = listdir(dir_path, index, name, sizeof(name), &is_dir);
         if (size < 0)
         {
             break;
@@ -77,9 +78,16 @@ void _start(int argc, char **argv)
         int len = 0;
         append(line, &len, "  ");
         append(line, &len, name);
-        append(line, &len, "  (");
-        append_int(line, &len, size);
-        append(line, &len, " bytes)\n");
+        if (is_dir)
+        {
+            append(line, &len, "  (dir)\n");
+        }
+        else
+        {
+            append(line, &len, "  (");
+            append_int(line, &len, size);
+            append(line, &len, " bytes)\n");
+        }
         write(line, len);
     }
 

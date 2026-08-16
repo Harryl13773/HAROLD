@@ -1,4 +1,4 @@
-// Accepts one TCP connection on port 7 and echoes data back until the client closes it
+// Accepts one TCP connection on port 7 and echoes data back until the client closes it.
 
 #include "libc.h"
 

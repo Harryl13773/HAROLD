@@ -5,6 +5,7 @@
 
 #include "libc.h"
 
+// Prints label followed by OK or FAIL depending on ok
 static void report(const char *label, int ok)
 {
     write(label, strlen(label));

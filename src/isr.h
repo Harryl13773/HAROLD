@@ -1,4 +1,4 @@
-// Public interface for installing CPU exception handlers
+// Public interface for installing the CPU's 32 exception handlers into the IDT.
 
 #ifndef ISR_H
 #define ISR_H

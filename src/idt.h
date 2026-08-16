@@ -1,4 +1,4 @@
-// Public interface for building and loading the IDT
+// Public interface for building and loading the Interrupt Descriptor Table.
 
 #ifndef IDT_H
 #define IDT_H

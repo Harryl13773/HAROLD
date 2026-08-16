@@ -1,4 +1,4 @@
-// Userspace libc: int 0x80 syscall wrappers plus minimal string/memory helpers for ELF programs
+// Userspace libc: int 0x80 syscall wrappers plus minimal string/memory helpers for ELF programs.
 
 #include "libc.h"
 
@@ -30,10 +30,10 @@ int close(int fd)
     return result;
 }
 
-int listdir(const char *dir_path, int index, char *name_buf, unsigned int buf_size)
+int listdir(const char *dir_path, int index, char *name_buf, unsigned int buf_size, int *is_dir_out)
 {
     int result;
-    __asm__ volatile("int $0x80" : "=a"(result) : "a"(5), "b"(index), "c"(name_buf), "d"(buf_size), "S"(dir_path));
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(5), "b"(index), "c"(name_buf), "d"(buf_size), "S"(dir_path), "D"(is_dir_out) : "memory");
     return result;
 }
 
@@ -108,6 +108,18 @@ void rtc_read(struct rtc_time *out)
 void mouse_read(struct mouse_packet *out)
 {
     __asm__ volatile("int $0x80" : : "a"(16), "b"(out) : "memory");
+}
+
+int run(int argc, char *const argv[])
+{
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(17), "b"(argc), "c"(argv) : "memory");
+    return result;
+}
+
+void draw_text(int row, int col, const char *text, unsigned int len, unsigned char attr)
+{
+    __asm__ volatile("int $0x80" : : "a"(18), "b"(row), "c"(col), "d"(text), "S"(len), "D"(attr));
 }
 
 void exit(void)

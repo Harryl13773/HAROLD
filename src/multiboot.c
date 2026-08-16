@@ -1,4 +1,4 @@
-// Parses the GRUB-provided Multiboot info structure and prints the usable memory map
+// Parses the GRUB-provided Multiboot info structure and prints the usable memory map.
 
 #include <stdint.h>
 #include "multiboot.h"

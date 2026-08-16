@@ -3,6 +3,7 @@
 // No cursor addressing or full-screen redraw, since this shell/terminal has neither — commands
 // operate on line numbers instead, the same way classic Unix `ed` does.
 
+
 #include "libc.h"
 
 #define MAX_LINES 512
@@ -14,6 +15,7 @@ static int line_count = 0;
 static int modified = 0;
 static char load_buf[MAX_LOAD_SIZE]; // scratch space for reading the file in — too big for the 4KB user stack
 
+// Prints a signed integer in decimal
 static void print_int(int value)
 {
     char buf[12];
@@ -52,6 +54,7 @@ static int read_line(char *buf, int max_len)
     return count;
 }
 
+// Allocates and returns a heap copy of s, or NULL on out-of-memory
 static char *copy_string(const char *s)
 {
     unsigned int len = strlen(s);
@@ -63,6 +66,7 @@ static char *copy_string(const char *s)
     return copy;
 }
 
+// Prints line n (1-based) as "N: content"
 static void print_line(int n) // 1-based
 {
     print_int(n);
@@ -71,6 +75,7 @@ static void print_line(int n) // 1-based
     write("\n", 1);
 }
 
+// Prints every loaded line
 static void cmd_list(void)
 {
     for (int i = 0; i < line_count; i++)
@@ -79,6 +84,7 @@ static void cmd_list(void)
     }
 }
 
+// Prints a single line by number
 static void cmd_print(int n)
 {
     if (n < 1 || n > line_count)
@@ -126,6 +132,7 @@ static void cmd_insert(int at)
     modified = 1;
 }
 
+// Deletes line n (1-based), shifting later lines up
 static void cmd_delete(int n)
 {
     if (n < 1 || n > line_count)
@@ -144,6 +151,7 @@ static void cmd_delete(int n)
     modified = 1;
 }
 
+// Writes every loaded line back out to filename, truncating any existing content
 static void cmd_save(const char *filename)
 {
     int fd = open_write(filename, FAT_OPEN_TRUNCATE);
@@ -166,6 +174,7 @@ static void cmd_save(const char *filename)
     write(msg, strlen(msg));
 }
 
+// Reads filename in whole and splits it into lines[], or starts empty if it doesn't exist yet
 static void load_file(const char *filename)
 {
     int fd = open(filename);
@@ -220,6 +229,7 @@ static void load_file(const char *filename)
     }
 }
 
+// Prints the command reference
 static void print_help(void)
 {
     const char *help =

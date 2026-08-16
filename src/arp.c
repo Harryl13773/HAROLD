@@ -1,4 +1,4 @@
-// ARP protocol: IP->MAC resolution cache, request sending, and reply handling
+// ARP protocol: IP->MAC resolution cache, request sending, and reply handling.
 
 #include <stdint.h>
 #include "terminal.h"
@@ -12,7 +12,7 @@
 #define ARP_OP_REPLY 0x0002
 
 #define ARP_FRAME_SIZE 42         // 14-byte Ethernet header + 28-byte ARP payload
-#define ARP_POLL_ATTEMPTS 2000000 // bounded — no timer available this early in boot, so this is a busy-wait proxy for a timeout
+#define ARP_POLL_ATTEMPTS 2000000 // bounded: no timer available this early in boot, so this is a busy-wait proxy for a timeout
 #define ARP_CACHE_SIZE 16
 
 struct arp_cache_entry
@@ -157,7 +157,7 @@ int arp_resolve(const uint8_t target_ip[4], uint8_t out_mac[6])
     }
     for (int i = 0; i < 4; i++)
     {
-        arp[14 + i] = 0x00; // sender protocol address — 0.0.0.0, since we have no IP configured yet
+        arp[14 + i] = 0x00; // sender protocol address (0.0.0.0), since we have no IP configured yet
     }
     for (int i = 0; i < 6; i++)
     {
@@ -206,7 +206,7 @@ int arp_resolve(const uint8_t target_ip[4], uint8_t out_mac[6])
 
         for (int i = 0; i < 6; i++)
         {
-            out_mac[i] = reply_arp[8 + i]; // sender hardware address — the answer we wanted
+            out_mac[i] = reply_arp[8 + i]; // sender hardware address (want)
         }
 
         arp_cache_insert(target_ip, out_mac);
@@ -228,7 +228,7 @@ int arp_resolve(const uint8_t target_ip[4], uint8_t out_mac[6])
     return 0;
 }
 
-// Checks a received frame; if it's a request for our_ip, replies with our real MAC — the piece a requester alone can't provide
+// If the frame requests our IP, replies with our MAC address
 int arp_respond_if_request(const uint8_t *frame, int frame_len, const uint8_t our_ip[4])
 {
     if (frame_len < ARP_FRAME_SIZE)

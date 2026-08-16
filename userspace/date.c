@@ -1,4 +1,4 @@
-// Prints the current wall-clock date/time via rtc_read() — proves the RTC driver end-to-end
+// Prints the current wall-clock date/time via rtc_read() — proves the RTC driver end-to-end.
 
 #include "libc.h"
 

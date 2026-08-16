@@ -1,4 +1,4 @@
-// Public interface for the TCP layer and its socket-style accept/recv/send/close calls
+// Public interface for the TCP layer and its socket-style accept/recv/send/close calls.
 
 #ifndef TCP_H
 #define TCP_H

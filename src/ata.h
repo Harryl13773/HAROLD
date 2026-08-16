@@ -1,4 +1,4 @@
-// Public interface for the ATA PIO sector read/write driver
+// Public interface for the ATA PIO sector read/write driver.
 
 #ifndef ATA_H
 #define ATA_H

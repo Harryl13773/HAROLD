@@ -1,4 +1,4 @@
-// Public interface for the shell task
+// Public interface for the interactive shell task.
 
 #ifndef SHELL_H
 #define SHELL_H

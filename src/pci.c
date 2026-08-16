@@ -1,4 +1,4 @@
-// PCI config space access and bus/slot/function scanning for device discovery
+// PCI config space access and bus/slot/function scanning for device discovery.
 
 #include <stdint.h>
 #include "io.h"

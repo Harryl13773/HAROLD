@@ -1,4 +1,4 @@
-// Paging setup and per-task page directory/table management, including private user page mapping and teardown
+// Paging setup and per-task page directory/table management, including private user page mapping and teardown.
 
 #include <stdint.h>
 #include <stddef.h>
@@ -30,6 +30,7 @@ static inline void enable_paging(void)
     __asm__ volatile("mov %0, %%cr0" : : "r"(cr0));
 }
 
+// Identity-maps the first 4MB and enables paging
 void paging_init(void)
 {
     // Kernel-only by default: ring 0 access is never restricted by the U/S bit, so the kernel,

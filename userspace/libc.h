@@ -1,4 +1,4 @@
-// Public interface for the userspace libc: syscall wrappers and string/memory helpers
+// Public interface for the userspace libc: syscall wrappers and string/memory helpers.
 
 #ifndef LIBC_H
 #define LIBC_H
@@ -17,7 +17,8 @@ int close(int fd);
 
 // Gets the index-th file's name (into name_buf) and returns its size, or -1 past the last file.
 // dir_path selects which directory to list ("" for root).
-int listdir(const char *dir_path, int index, char *name_buf, unsigned int buf_size);
+// is_dir_out is filled with 1 if the entry is a directory, 0 if it's a file
+int listdir(const char *dir_path, int index, char *name_buf, unsigned int buf_size, int *is_dir_out);
 
 // Blocks until a client connects, then returns a socket descriptor for it
 int socket_accept(void);
@@ -83,6 +84,14 @@ struct mouse_packet
 
 // Blocks until a mouse packet is available, then fills *out
 void mouse_read(struct mouse_packet *out);
+
+// Launches argv[0] as an ELF program with the rest as its arguments, and blocks until it exits;
+// returns 0, or -1 on failure
+int run(int argc, char *const argv[]);
+
+// Writes len characters starting at (row, col) with a raw VGA attribute byte (0x0F = white on
+// black, 0xF0 = inverted) — a positioned draw, independent of the normal scrolling write()
+void draw_text(int row, int col, const char *text, unsigned int len, unsigned char attr);
 
 // Terminates the calling program
 void exit(void);

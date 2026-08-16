@@ -1,4 +1,4 @@
-// Public interface for GDT setup and selector constants
+// Public interface for GDT setup and selector constants.
 
 #ifndef GDT_H
 #define GDT_H
@@ -10,6 +10,7 @@
 #define GDT_USER_DATA 0x20
 #define GDT_TSS 0x28
 
+// Builds and loads the null, kernel, user, and TSS descriptors
 void gdt_install(void);
 
 #endif

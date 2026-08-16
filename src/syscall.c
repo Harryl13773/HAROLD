@@ -1,4 +1,4 @@
-// int 0x80 syscall dispatcher: file I/O, sockets, terminal write, and task exit for ring 3 programs
+// int 0x80 syscall dispatcher: file I/O, sockets, terminal write, and task exit for ring 3 programs.
 
 #include <stdint.h>
 #include "idt.h"
@@ -10,6 +10,7 @@
 #include "tcp.h"
 #include "dns.h"
 #include "rtc.h"
+#include "exec.h"
 #include "syscall.h"
 
 extern void syscall_stub(void);
@@ -40,7 +41,10 @@ struct registers
 #define SYSCALL_DNS_RESOLVE 14
 #define SYSCALL_RTC_READ 15
 #define SYSCALL_MOUSE_READ 16
+#define SYSCALL_RUN 17
+#define SYSCALL_DRAW_TEXT 18
 
+// Decodes eax as a syscall number, dispatches to the matching kernel function, and returns the result in eax
 void syscall_handler(struct registers *regs)
 {
     switch (regs->eax)
@@ -107,10 +111,16 @@ void syscall_handler(struct registers *regs)
         int index = (int)regs->ebx;
         char *name_buf = (char *)regs->ecx;
         uint32_t buf_size = regs->edx;
+        int *is_dir_out = (int *)regs->edi;
         uint32_t file_size;
+        int is_dir;
 
-        if (fat_list_entry(dir_path, index, name_buf, buf_size, &file_size) == 0)
+        if (fat_list_entry(dir_path, index, name_buf, buf_size, &file_size, &is_dir) == 0)
         {
+            if (is_dir_out != 0)
+            {
+                *is_dir_out = is_dir;
+            }
             regs->eax = file_size;
         }
         else
@@ -205,6 +215,26 @@ void syscall_handler(struct registers *regs)
         break;
     }
 
+    case SYSCALL_RUN:
+    {
+        int argc = (int)regs->ebx;
+        char *const *argv = (char *const *)regs->ecx;
+        regs->eax = (uint32_t)exec_run(argc, argv);
+        break;
+    }
+
+    case SYSCALL_DRAW_TEXT:
+    {
+        int row = (int)regs->ebx;
+        int col = (int)regs->ecx;
+        const char *text = (const char *)regs->edx;
+        int len = (int)regs->esi;
+        uint8_t attr = (uint8_t)regs->edi;
+        terminal_draw_text(row, col, text, len, attr);
+        regs->eax = 0;
+        break;
+    }
+
     case SYSCALL_EXIT:
         task_exit(); // never returns — removes this task and switches away
         break;
@@ -215,6 +245,7 @@ void syscall_handler(struct registers *regs)
     }
 }
 
+// Registers the int 0x80 gate at DPL 3, so ring 3 code can invoke it
 void syscall_install(void)
 {
     // 0xEE = present, DPL 3, interrupt gate — DPL 3 lets ring 3 code invoke this

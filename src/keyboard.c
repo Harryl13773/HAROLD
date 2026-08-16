@@ -1,4 +1,4 @@
-// PS/2 keyboard driver: scancode-to-ASCII translation, shift tracking, and a circular input buffer
+// PS/2 keyboard driver: scancode-to-ASCII translation, shift tracking, and a circular input buffer.
 
 #include <stdint.h>
 #include "io.h"
@@ -154,6 +154,7 @@ static void kb_buffer_push(char c)
     }
 }
 
+// Fires on every IRQ1: decodes the scancode, tracks shift state, echoes and buffers the character
 static void keyboard_handler(void)
 {
     uint8_t scancode = inb(0x60);
@@ -180,11 +181,13 @@ static void keyboard_handler(void)
     }
 }
 
+// Enables the keyboard IRQ handler and clears its input buffer
 void keyboard_install(void)
 {
     irq_set_handler(1, keyboard_handler);
 }
 
+// True if a key is waiting in the buffer without blocking
 int keyboard_has_char(void)
 {
     return kb_head != kb_tail;

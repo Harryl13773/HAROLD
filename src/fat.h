@@ -1,4 +1,4 @@
-// Public interface for the FAT16 filesystem driver
+// Public interface for the FAT16 filesystem driver.
 
 #ifndef FAT_H
 #define FAT_H
@@ -18,9 +18,7 @@ int fat_open(const char *filename);
 // Reads up to len bytes from fd, resuming from the last position; returns bytes read, 0 at EOF, or -1
 int fat_read(int fd, uint8_t *buffer, uint32_t len);
 
-// Repositions fd (opened via fat_open or fat_open_write) to an absolute byte offset, for reading
-// or writing; returns 0, or -1 for an invalid fd or an offset past the file's current end (no
-// sparse files)
+// Seeks to an absolute file offset; returns 0 on success or -1 if invalid
 int fat_seek(int fd, uint32_t offset);
 
 // Closes a descriptor opened by fat_open or fat_open_write; returns 0 or -1 on an invalid fd
@@ -32,21 +30,18 @@ void fat_close_all_for_task(int task_id);
 #define FAT_OPEN_CREATE 0   // fails if the file already exists
 #define FAT_OPEN_TRUNCATE 1 // creates if missing, or empties an existing file before writing
 #define FAT_OPEN_APPEND 2   // creates if missing, or resumes writing from the end of an existing file
-#define FAT_OPEN_MODIFY 3   // creates if missing, or opens at the start of an existing file without
-                             // truncating it — combine with fat_seek for in-place edits
+#define FAT_OPEN_MODIFY 3   // Creates if missing, or opens an existing file for in-place edits
 
 // Creates filename, or opens an existing one per mode (FAT_OPEN_*); returns a fd or -1
 int fat_open_write(const char *filename, int mode);
 
-// Writes len bytes from buffer to fd (opened via fat_open_write), extending the file as needed;
-// returns bytes actually written (less than len only if the disk fills up)
+// Writes len bytes to fd, extending the file as needed; returns bytes written
 int fat_write(int fd, const uint8_t *buffer, uint32_t len);
 
 // Creates a new, empty subdirectory at path (parent must already exist); returns 0 or -1
 int fat_mkdir(const char *path);
 
-// Gets the index-th entry's name and size from the directory at dir_path ("" means root);
-// returns 0, or -1 past the last entry or if dir_path doesn't resolve to a directory
-int fat_list_entry(const char *dir_path, int index, char *name_out, uint32_t name_out_size, uint32_t *size_out);
+// Gets the index-th directory entry's name, size, and type; returns 0 or -1
+int fat_list_entry(const char *dir_path, int index, char *name_out, uint32_t name_out_size, uint32_t *size_out, int *is_dir_out);
 
 #endif

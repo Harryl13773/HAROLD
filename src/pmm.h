@@ -1,4 +1,4 @@
-// Public interface for the bitmap-based physical frame allocator
+// Public interface for the bitmap-based physical frame allocator.
 
 #ifndef PMM_H
 #define PMM_H

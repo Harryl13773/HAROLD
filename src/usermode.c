@@ -1,5 +1,5 @@
 // Allocates a user-mode stack, lays out a real argc/argv call frame on it, and performs the
-// ring0->ring3 jump into a task's entry point
+// ring0->ring3 jump into a task's entry point.
 
 #include <stdint.h>
 #include "heap.h"
@@ -12,6 +12,7 @@
 
 extern void jump_to_usermode(uint32_t entry_eip, uint32_t user_esp);
 
+// Allocates a user stack, lays out a standard argc/argv call frame on it, and jumps entry into ring 3
 void usermode_enter(void (*entry)(void), int argc, char *const argv[])
 {
     if (argc > MAX_ARGS)

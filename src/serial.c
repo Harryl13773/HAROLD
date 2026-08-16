@@ -1,6 +1,6 @@
 // COM1 serial driver: a persistent log outside the 25-row VGA buffer, so scrolled-off history
 // (including exactly when a fault happened relative to everything else) is never actually lost —
-// QEMU's -serial flag captures it to a file/stdio even in a headless run
+// QEMU's -serial flag captures it to a file/stdio even in a headless run.
 
 #include <stdint.h>
 #include "io.h"
@@ -34,6 +34,7 @@ static int serial_data_ready(void)
     return inb(COM1 + 5) & 0x01;
 }
 
+// Fires on every IRQ4 — drains and echoes any bytes the UART has received
 static void serial_handler(void)
 {
     while (serial_data_ready()) // drain the FIFO — more than one byte can be waiting per IRQ
@@ -44,6 +45,7 @@ static void serial_handler(void)
     }
 }
 
+// Initializes COM1 at 38400 baud, 8N1, with FIFO enabled, and wires up IRQ4-driven receive
 void serial_init(void)
 {
     outb(COM1 + 1, 0x00); // disable UART interrupts while we finish setup
@@ -76,6 +78,7 @@ static void serial_raw_putchar(char c)
     outb(COM1, (uint8_t)c);
 }
 
+// Writes one character, blocking until the transmit holding register is empty
 void serial_putchar(char c)
 {
     if (c == '\n')
@@ -85,6 +88,7 @@ void serial_putchar(char c)
     serial_raw_putchar(c);
 }
 
+// Writes a full string via serial_putchar
 void serial_writestring(const char *str)
 {
     for (int i = 0; str[i] != '\0'; i++)
@@ -93,6 +97,7 @@ void serial_writestring(const char *str)
     }
 }
 
+// True if a received byte is waiting to be read without blocking
 int serial_has_char(void)
 {
     return serial_rx_head != serial_rx_tail;

@@ -1,5 +1,5 @@
 // Interactive shell task: reads a command line from the keyboard or serial (COM1), splits it into
-// argv, and runs argv[0] as an ELF program with the rest as its arguments
+// argv, and runs argv[0] as an ELF program with the rest as its arguments.
 
 #include "console.h"
 #include "terminal.h"
@@ -118,6 +118,7 @@ static int tokenize(char *line, char **argv, int max_args)
     return argc;
 }
 
+// The shell's own task entry point — reads a filename, runs it, repeats
 void shell_task(void)
 {
     terminal_writestring("\nHAROLD shell - type a filename (e.g. test.elf) to run it, optionally followed by arguments\n");

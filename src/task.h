@@ -1,4 +1,4 @@
-// Public interface for the task scheduler: task struct, lifecycle, and scheduling calls
+// Public interface for the task scheduler: task struct, lifecycle, and scheduling calls.
 
 #ifndef TASK_H
 #define TASK_H

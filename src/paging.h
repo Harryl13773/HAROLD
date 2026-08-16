@@ -1,4 +1,4 @@
-// Public interface for paging setup and per-task page directory/table management
+// Public interface for paging setup and per-task page directory/table management.
 
 #ifndef PAGING_H
 #define PAGING_H
