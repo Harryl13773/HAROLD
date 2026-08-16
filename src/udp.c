@@ -3,11 +3,24 @@
 #include <stdint.h>
 #include "terminal.h"
 #include "ip.h"
+#include "pit.h"
 #include "udp.h"
 
 #define UDP_HEADER_LEN 8
 #define PSEUDO_HEADER_LEN 12
 #define UDP_ECHO_PORT 7 // RFC 862 — a real, standard protocol, not a made-up test port
+
+#define UDP_CAPTURE_BUF_SIZE 512
+
+// One-shot capture state for a synchronous request/reply caller (dns_resolve) — only one such
+// exchange is ever in flight at a time on this stack, matching the "single pending thing" pattern
+// already used elsewhere (TCP's one outstanding segment).
+static int capture_armed = 0;
+static uint16_t capture_port;
+static int capture_ready = 0;
+static uint8_t capture_buf[UDP_CAPTURE_BUF_SIZE];
+static uint16_t capture_len;
+static uint8_t capture_source_ip[4];
 
 // Sends a UDP datagram wrapped in IP and Ethernet headers, with a correctly computed pseudo-header checksum
 void udp_send(uint16_t source_port, uint16_t dest_port, const uint8_t dest_ip[4], const uint8_t dest_mac[6], const uint8_t *payload, uint16_t payload_len)
@@ -79,9 +92,72 @@ void udp_receive(const uint8_t source_ip[4], const uint8_t source_mac[6], const 
     const uint8_t *payload = udp_data + UDP_HEADER_LEN;
     uint16_t payload_len = udp_len - UDP_HEADER_LEN;
 
+    if (capture_armed && dest_port == capture_port)
+    {
+        uint16_t copy_len = payload_len;
+        if (copy_len > sizeof(capture_buf))
+        {
+            copy_len = sizeof(capture_buf);
+        }
+        for (uint16_t i = 0; i < copy_len; i++)
+        {
+            capture_buf[i] = payload[i];
+        }
+        capture_len = copy_len;
+        for (int i = 0; i < 4; i++)
+        {
+            capture_source_ip[i] = source_ip[i];
+        }
+        capture_armed = 0;
+        capture_ready = 1;
+        return;
+    }
+
     if (dest_port == UDP_ECHO_PORT)
     {
         udp_send(UDP_ECHO_PORT, source_port, source_ip, source_mac, payload, payload_len);
         terminal_writestring("UDP: echo reply sent\n");
     }
+}
+
+void udp_arm_response_capture(uint16_t local_port)
+{
+    capture_ready = 0;
+    capture_port = local_port;
+    capture_armed = 1;
+}
+
+int udp_wait_for_response(uint8_t *buf, uint32_t buf_size, uint8_t out_source_ip[4], uint32_t timeout_ticks)
+{
+    uint32_t start = pit_get_ticks();
+
+    __asm__ volatile("sti"); // may be running with IF=0, called from inside a syscall
+
+    while (!capture_ready)
+    {
+        if (pit_get_ticks() - start >= timeout_ticks)
+        {
+            capture_armed = 0;
+            return -1;
+        }
+        __asm__ volatile("hlt");
+    }
+
+    capture_armed = 0;
+
+    uint16_t copy_len = capture_len;
+    if (copy_len > buf_size)
+    {
+        copy_len = (uint16_t)buf_size;
+    }
+    for (uint16_t i = 0; i < copy_len; i++)
+    {
+        buf[i] = capture_buf[i];
+    }
+    for (int i = 0; i < 4; i++)
+    {
+        out_source_ip[i] = capture_source_ip[i];
+    }
+
+    return (int)copy_len;
 }

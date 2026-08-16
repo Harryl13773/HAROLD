@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include "terminal.h"
 #include "rtl8139.h"
+#include "arp.h"
 #include "icmp.h"
 #include "udp.h"
 #include "tcp.h"
@@ -12,6 +13,9 @@
 #define IP_HEADER_LEN 20 // no options — every packet we build or expect to parse is a plain 20-byte header
 
 static uint8_t our_ip[4] = {0, 0, 0, 0};
+static uint8_t our_netmask[4] = {255, 255, 255, 0}; // /24 default — matches this project's own single-subnet test setups
+static uint8_t our_gateway[4] = {0, 0, 0, 0};
+static int gateway_configured = 0;
 
 // Sets our own IPv4 address — call once at boot before anything tries to send or receive IP
 void ip_set_address(const uint8_t ip[4])
@@ -29,6 +33,51 @@ void ip_get_address(uint8_t out_ip[4])
     {
         out_ip[i] = our_ip[i];
     }
+}
+
+void ip_set_netmask(const uint8_t mask[4])
+{
+    for (int i = 0; i < 4; i++)
+    {
+        our_netmask[i] = mask[i];
+    }
+}
+
+void ip_set_gateway(const uint8_t gateway[4])
+{
+    for (int i = 0; i < 4; i++)
+    {
+        our_gateway[i] = gateway[i];
+    }
+    gateway_configured = 1;
+}
+
+int ip_resolve_route(const uint8_t dest_ip[4], uint8_t out_mac[6])
+{
+    int same_subnet = 1;
+    for (int i = 0; i < 4; i++)
+    {
+        if ((dest_ip[i] & our_netmask[i]) != (our_ip[i] & our_netmask[i]))
+        {
+            same_subnet = 0;
+            break;
+        }
+    }
+
+    if (same_subnet)
+    {
+        return arp_resolve(dest_ip, out_mac);
+    }
+
+    if (!gateway_configured)
+    {
+        terminal_writestring("IP: destination is off-subnet and no gateway is configured\n");
+        return 0;
+    }
+
+    // dest_ip stays in the IP header exactly as given by the caller — only the link-layer
+    // destination changes, to the gateway, which is responsible for routing it onward from here
+    return arp_resolve(our_gateway, out_mac);
 }
 
 // Computes the standard Internet one's-complement checksum over a buffer

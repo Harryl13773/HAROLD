@@ -25,6 +25,7 @@
 #include "arp.h"
 #include "ip.h"
 #include "net.h"
+#include "dns.h"
 #include "serial.h"
 
 extern uint32_t kernel_end;
@@ -70,6 +71,18 @@ void kernel_main(uint32_t multiboot_addr)
         // SLIRP (`run`/`run-iso`, 10.0.2.15) or to vmnet-shared (whatever subnet it assigns)
         uint8_t our_ip[4] = {192, 168, 18, 50};
         ip_set_address(our_ip);
+
+        // The bridge address doubles as our gateway — it's the Mac itself, which (via vmnet-host)
+        // is what actually has a path off this subnet. Update alongside our_ip/bridge_ip above if
+        // you switch backends.
+        ip_set_gateway(bridge_ip);
+
+        // A public resolver, reachable through the gateway above — requires the bridge to actually
+        // provide real internet access (vmnet-host does, by bridging to the Mac's own network).
+        // This is what ip_resolve_route's gateway-aware routing exists for: this address is never
+        // on our own /24, so every DNS query goes out via the gateway, not a direct ARP.
+        uint8_t dns_server[4] = {8, 8, 8, 8};
+        dns_set_server(dns_server);
     }
 
     // Detect the disk, prove we can read from it, then mount the filesystem on it

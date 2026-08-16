@@ -7,6 +7,7 @@
 #include "keyboard.h"
 #include "fat.h"
 #include "tcp.h"
+#include "dns.h"
 #include "syscall.h"
 
 extern void syscall_stub(void);
@@ -34,6 +35,7 @@ struct registers
 #define SYSCALL_FWRITE 11
 #define SYSCALL_MKDIR 12
 #define SYSCALL_SEEK 13
+#define SYSCALL_DNS_RESOLVE 14
 
 void syscall_handler(struct registers *regs)
 {
@@ -172,6 +174,14 @@ void syscall_handler(struct registers *regs)
         int fd = (int)regs->ebx;
         uint32_t offset = regs->ecx;
         regs->eax = (uint32_t)fat_seek(fd, offset);
+        break;
+    }
+
+    case SYSCALL_DNS_RESOLVE:
+    {
+        const char *hostname = (const char *)regs->ebx;
+        uint8_t *out_ip = (uint8_t *)regs->ecx;
+        regs->eax = (uint32_t)dns_resolve(hostname, out_ip);
         break;
     }
 

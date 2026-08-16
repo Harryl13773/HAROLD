@@ -93,6 +93,13 @@ int seek(int fd, unsigned int offset)
     return result;
 }
 
+int dns_resolve(const char *hostname, unsigned char out_ip[4])
+{
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(14), "b"(hostname), "c"(out_ip));
+    return result;
+}
+
 void exit(void)
 {
     __asm__ volatile("int $0x80" : : "a"(1));

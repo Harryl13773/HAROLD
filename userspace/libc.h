@@ -50,6 +50,10 @@ int seek(int fd, unsigned int offset);
 // Creates a new, empty subdirectory at path (the parent must already exist); returns 0 or -1
 int mkdir(const char *path);
 
+// Resolves hostname to an IPv4 address via a single DNS A-record query; fills out_ip (4 bytes);
+// returns 0, or -1 on failure (no DNS server configured, no route, or timeout)
+int dns_resolve(const char *hostname, unsigned char out_ip[4]);
+
 // Terminates the calling program
 void exit(void);
 
