@@ -8,6 +8,7 @@
 #include "fat.h"
 #include "tcp.h"
 #include "dns.h"
+#include "rtc.h"
 #include "syscall.h"
 
 extern void syscall_stub(void);
@@ -36,6 +37,7 @@ struct registers
 #define SYSCALL_MKDIR 12
 #define SYSCALL_SEEK 13
 #define SYSCALL_DNS_RESOLVE 14
+#define SYSCALL_RTC_READ 15
 
 void syscall_handler(struct registers *regs)
 {
@@ -182,6 +184,14 @@ void syscall_handler(struct registers *regs)
         const char *hostname = (const char *)regs->ebx;
         uint8_t *out_ip = (uint8_t *)regs->ecx;
         regs->eax = (uint32_t)dns_resolve(hostname, out_ip);
+        break;
+    }
+
+    case SYSCALL_RTC_READ:
+    {
+        struct rtc_time *out = (struct rtc_time *)regs->ebx;
+        rtc_read(out);
+        regs->eax = 0;
         break;
     }
 

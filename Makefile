@@ -141,6 +141,12 @@ userspace/nslookup.elf: userspace/nslookup.c userspace/libc.c userspace/libc.h u
 	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
 	$(LD) -m elf_i386 -T userspace/linker.ld userspace/nslookup.o userspace/libc.o -o userspace/nslookup.elf
 
+# Prints the current date/time via rtc_read() — proves the RTC driver end-to-end
+userspace/date.elf: userspace/date.c userspace/libc.c userspace/libc.h userspace/linker.ld
+	$(CC) $(USERCFLAGS) -c userspace/date.c -o userspace/date.o
+	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
+	$(LD) -m elf_i386 -T userspace/linker.ld userspace/date.o userspace/libc.o -o userspace/date.elf
+
 # Run with QEMU's built-in multiboot loader (the shortcut you've been using)
 run: kernel.bin disk.img
 	qemu-system-x86_64 -kernel kernel.bin -drive file=disk.img,format=raw,if=ide -netdev user,id=n0 -device rtl8139,netdev=n0 -object filter-dump,id=f0,netdev=n0,file=harold_net.pcap
@@ -155,7 +161,7 @@ run-vmnet: kernel.bin disk.img
 	sudo qemu-system-x86_64 -kernel kernel.bin -drive file=disk.img,format=raw,if=ide -netdev vmnet-host,id=n0 -device rtl8139,netdev=n0 -object filter-dump,id=f0,netdev=n0,file=harold_net.pcap
 
 clean:
-	rm -f *.o kernel.bin harold.iso userspace/test.o userspace/inference.o userspace/cat.o userspace/ls.o userspace/crash.o userspace/netecho.o userspace/save.o userspace/readsaved.o userspace/append.o userspace/overwrite.o userspace/writer.o userspace/spy.o userspace/leakfd.o userspace/malloctest.o userspace/mkdir.o userspace/poke.o userspace/nslookup.o userspace/libc.o userspace/test.elf userspace/inference.elf userspace/cat.elf userspace/ls.elf userspace/crash.elf userspace/netecho.elf userspace/save.elf userspace/readsaved.elf userspace/append.elf userspace/overwrite.elf userspace/writer.elf userspace/spy.elf userspace/leakfd.elf userspace/malloctest.elf userspace/mkdir.elf userspace/poke.elf userspace/nslookup.elf
+	rm -f *.o kernel.bin harold.iso userspace/test.o userspace/inference.o userspace/cat.o userspace/ls.o userspace/crash.o userspace/netecho.o userspace/save.o userspace/readsaved.o userspace/append.o userspace/overwrite.o userspace/writer.o userspace/spy.o userspace/leakfd.o userspace/malloctest.o userspace/mkdir.o userspace/poke.o userspace/nslookup.o userspace/date.o userspace/libc.o userspace/test.elf userspace/inference.elf userspace/cat.elf userspace/ls.elf userspace/crash.elf userspace/netecho.elf userspace/save.elf userspace/readsaved.elf userspace/append.elf userspace/overwrite.elf userspace/writer.elf userspace/spy.elf userspace/leakfd.elf userspace/malloctest.elf userspace/mkdir.elf userspace/poke.elf userspace/nslookup.elf userspace/date.elf
 	rm -rf isodir
 
 .PHONY: all run run-iso iso clean

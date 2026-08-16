@@ -54,6 +54,21 @@ int mkdir(const char *path);
 // returns 0, or -1 on failure (no DNS server configured, no route, or timeout)
 int dns_resolve(const char *hostname, unsigned char out_ip[4]);
 
+// A snapshot of wall-clock time read from the CMOS RTC — field layout matches src/rtc.h's
+// struct rtc_time exactly, which is what the kernel actually writes into it
+struct rtc_time
+{
+    unsigned short year; // full 4-digit year, e.g. 2026
+    unsigned char month; // 1-12
+    unsigned char day;   // 1-31
+    unsigned char hour;  // 0-23
+    unsigned char minute; // 0-59
+    unsigned char second; // 0-59
+};
+
+// Reads the current date/time from the RTC into *out
+void rtc_read(struct rtc_time *out);
+
 // Terminates the calling program
 void exit(void);
 

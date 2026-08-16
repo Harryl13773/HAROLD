@@ -100,6 +100,11 @@ int dns_resolve(const char *hostname, unsigned char out_ip[4])
     return result;
 }
 
+void rtc_read(struct rtc_time *out)
+{
+    __asm__ volatile("int $0x80" : : "a"(15), "b"(out) : "memory");
+}
+
 void exit(void)
 {
     __asm__ volatile("int $0x80" : : "a"(1));
