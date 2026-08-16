@@ -18,7 +18,16 @@
 #define TCP_FLAG_ACK 0x10
 #define TCP_FLAG_URG 0x20
 
-#define TCP_RTO_TICKS 50 // 500ms at the configured 100Hz PIT rate — a fixed timeout, not adaptive; a known simplification
+// Retransmit timeout is now adaptive (Jacobson's RTT/RTTVAR estimator, RFC 6298), not fixed. These
+// bound it: an initial guess before any real sample exists, and floor/ceiling on the estimate
+// itself. RFC 6298 suggests a 1-second floor, sized for wide-area Internet conditions — this stack
+// only ever runs on a local/virtual LAN (see the project's own single-subnet limitation), where a
+// 1-second floor would make every retransmit needlessly slow and defeat the point of estimating a
+// real RTT at all. PIT ticks are 10ms each at the configured 100Hz rate, so the floor here is set
+// just above single-tick granularity instead.
+#define TCP_RTO_INITIAL_TICKS 50 // 500ms — used only before any real RTT sample exists
+#define TCP_RTO_MIN_TICKS 2      // 20ms
+#define TCP_RTO_MAX_TICKS 200    // 2s — keeps one bad RTTVAR spike from letting RTO grow unbounded
 #define TCP_MAX_RETRANSMITS 5
 
 enum tcp_state
@@ -55,6 +64,16 @@ struct tcp_connection
     int pending; // 0 = nothing outstanding, 1 = waiting on an ACK
     uint32_t last_send_tick;
     int retransmit_count;
+    uint32_t current_rto; // this segment's actual timeout — starts at the connection's RTO
+                           // estimate, doubles on each retransmit (RFC 6298 exponential backoff)
+
+    // Jacobson's RTT/RTTVAR estimator (RFC 6298) — srtt is the smoothed RTT scaled by 8, rttvar
+    // the smoothed mean deviation scaled by 4 (both fixed-point integer, matching the classic
+    // BSD/Linux implementation, since this kernel builds with -mgeneral-regs-only: no FPU/SSE)
+    uint32_t srtt;
+    uint32_t rttvar;
+    uint32_t rto; // derived from srtt/rttvar — the connection's current best RTO estimate
+    int rtt_valid;
 };
 
 static struct tcp_connection connections[MAX_TCP_CONNECTIONS];
@@ -180,6 +199,65 @@ static void tcp_send_segment(struct tcp_connection *conn, uint8_t flags, uint32_
     ip_send(6, conn->remote_ip, conn->remote_mac, tcp_hdr, tcp_len);
 }
 
+// Takes an RTT sample from the segment currently pending on conn and folds it into the RTO
+// estimate (Jacobson's algorithm, RFC 6298 section 2), then clears conn->pending — called from
+// every path that confirms our last send was actually ACKed.
+static void tcp_rtt_sample(struct tcp_connection *conn)
+{
+    if (conn->retransmit_count == 0) // Karn's algorithm: skip the sample if this segment was ever
+                                      // retransmitted — an ACK arriving after a resend is
+                                      // ambiguous (original or resend?), and using it would risk
+                                      // corrupting the estimate with a bogus RTT
+    {
+        uint32_t measured = pit_get_ticks() - conn->last_send_tick;
+        if (measured == 0)
+        {
+            measured = 1; // PIT ticks are coarse (10ms each) — never treat a same-tick round trip
+                           // as literally zero, or the estimator collapses toward an
+                           // unrealistically tight RTO
+        }
+
+        if (!conn->rtt_valid)
+        {
+            conn->srtt = measured << 3;  // srtt stored as actual_srtt * 8
+            conn->rttvar = measured << 1; // rttvar stored as actual_rttvar * 4, i.e. (R/2) * 4
+            conn->rtt_valid = 1;
+        }
+        else
+        {
+            int32_t delta = (int32_t)measured - (int32_t)(conn->srtt >> 3);
+            conn->srtt = (uint32_t)((int32_t)conn->srtt + delta); // srtt += (R - srtt/8)
+            if (delta < 0)
+            {
+                delta = -delta;
+            }
+            conn->rttvar = (uint32_t)((int32_t)conn->rttvar + (delta - (int32_t)(conn->rttvar >> 2)));
+        }
+
+        // rttvar is already scaled *4, which is exactly RFC 6298's K=4 multiplier — so
+        // srtt/8 + rttvar (as stored) directly gives SRTT + 4*RTTVAR with no extra multiply
+        conn->rto = (conn->srtt >> 3) + conn->rttvar;
+        if (conn->rto < TCP_RTO_MIN_TICKS)
+        {
+            conn->rto = TCP_RTO_MIN_TICKS;
+        }
+        if (conn->rto > TCP_RTO_MAX_TICKS)
+        {
+            conn->rto = TCP_RTO_MAX_TICKS;
+        }
+
+        terminal_writestring("TCP: RTT sample=");
+        terminal_print_dec(measured);
+        terminal_writestring(" ticks, srtt=");
+        terminal_print_dec(conn->srtt >> 3);
+        terminal_writestring(" rto=");
+        terminal_print_dec(conn->rto);
+        terminal_writestring(" ticks\n");
+    }
+
+    conn->pending = 0;
+}
+
 // Sends a segment that expects an ACK, and records it so tcp_check_retransmits can resend it if needed
 static void tcp_send_tracked(struct tcp_connection *conn, uint8_t flags, uint32_t seq, const uint8_t *payload, uint16_t payload_len)
 {
@@ -200,6 +278,7 @@ static void tcp_send_tracked(struct tcp_connection *conn, uint8_t flags, uint32_
     conn->pending = 1;
     conn->last_send_tick = pit_get_ticks();
     conn->retransmit_count = 0;
+    conn->current_rto = conn->rtt_valid ? conn->rto : TCP_RTO_INITIAL_TICKS;
 }
 
 // Checks every connection for a timed-out unacknowledged segment and resends it, up to a retry limit
@@ -215,7 +294,7 @@ void tcp_check_retransmits(void)
         {
             continue;
         }
-        if (now - conn->last_send_tick < TCP_RTO_TICKS)
+        if (now - conn->last_send_tick < conn->current_rto)
         {
             continue; // not due yet
         }
@@ -231,6 +310,14 @@ void tcp_check_retransmits(void)
         tcp_send_segment(conn, conn->pending_flags, conn->pending_seq, conn->their_seq, conn->pending_len > 0 ? conn->pending_data : 0, conn->pending_len);
         conn->last_send_tick = now;
         conn->retransmit_count++;
+
+        conn->current_rto *= 2; // RFC 6298 exponential backoff — doesn't touch the underlying
+                                 // srtt/rttvar estimate itself, only this segment's own timeout
+        if (conn->current_rto > TCP_RTO_MAX_TICKS)
+        {
+            conn->current_rto = TCP_RTO_MAX_TICKS;
+        }
+
         terminal_writestring("TCP: retransmitting\n");
     }
 }
@@ -295,6 +382,8 @@ void tcp_receive(const uint8_t source_ip[4], const uint8_t source_mac[6], const 
         conn->rx_tail = 0;
         conn->rx_closed = 0;
         conn->accepted = 0;
+        conn->rtt_valid = 0; // fresh connection, fresh RTT estimate — don't inherit a stale
+                              // srtt/rttvar from whatever this slot held before
 
         tcp_send_tracked(conn, TCP_FLAG_SYN | TCP_FLAG_ACK, conn->our_seq, 0, 0);
         conn->our_seq++; // our own SYN also consumes one sequence number
@@ -312,7 +401,8 @@ void tcp_receive(const uint8_t source_ip[4], const uint8_t source_mac[6], const 
         if (ack == conn->our_seq && seq == conn->their_seq)
         {
             conn->state = TCP_ESTABLISHED;
-            conn->pending = 0; // the SYN-ACK is now confirmed — nothing left to retransmit
+            tcp_rtt_sample(conn); // the SYN-ACK is now confirmed — nothing left to retransmit,
+                                   // and this is also this connection's very first RTT sample
             terminal_writestring("TCP: connection established\n");
         }
         return;
@@ -362,7 +452,7 @@ void tcp_receive(const uint8_t source_ip[4], const uint8_t source_mac[6], const 
         }
         else if (conn->pending && (flags & TCP_FLAG_ACK) && ack == conn->our_seq) // a bare ACK confirming our last send
         {
-            conn->pending = 0;
+            tcp_rtt_sample(conn);
         }
         return;
     }
@@ -374,7 +464,12 @@ void tcp_receive(const uint8_t source_ip[4], const uint8_t source_mac[6], const 
             conn->state = TCP_CLOSED;
             terminal_writestring("TCP: connection closed\n");
         }
-        conn->pending = 0;
+        if (conn->pending) // only take a sample if something was actually outstanding to time —
+                            // tcp_rtt_sample reads last_send_tick unconditionally, which would be
+                            // stale/meaningless data if nothing was really pending
+        {
+            tcp_rtt_sample(conn);
+        }
         return;
     }
 
