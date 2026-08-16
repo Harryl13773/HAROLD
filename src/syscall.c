@@ -5,6 +5,7 @@
 #include "terminal.h"
 #include "task.h"
 #include "keyboard.h"
+#include "mouse.h"
 #include "fat.h"
 #include "tcp.h"
 #include "dns.h"
@@ -38,6 +39,7 @@ struct registers
 #define SYSCALL_SEEK 13
 #define SYSCALL_DNS_RESOLVE 14
 #define SYSCALL_RTC_READ 15
+#define SYSCALL_MOUSE_READ 16
 
 void syscall_handler(struct registers *regs)
 {
@@ -191,6 +193,14 @@ void syscall_handler(struct registers *regs)
     {
         struct rtc_time *out = (struct rtc_time *)regs->ebx;
         rtc_read(out);
+        regs->eax = 0;
+        break;
+    }
+
+    case SYSCALL_MOUSE_READ:
+    {
+        struct mouse_packet *out = (struct mouse_packet *)regs->ebx;
+        *out = mouse_read_packet();
         regs->eax = 0;
         break;
     }

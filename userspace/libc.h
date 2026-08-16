@@ -69,6 +69,21 @@ struct rtc_time
 // Reads the current date/time from the RTC into *out
 void rtc_read(struct rtc_time *out);
 
+// One decoded PS/2 mouse packet — field layout matches src/mouse.h's struct mouse_packet exactly.
+// dy follows raw PS/2 convention: positive means the mouse moved UP, the opposite of typical
+// screen coordinates — negate it yourself if you want "down is positive" semantics.
+struct mouse_packet
+{
+    int dx;
+    int dy;
+    int left_button;
+    int right_button;
+    int middle_button;
+};
+
+// Blocks until a mouse packet is available, then fills *out
+void mouse_read(struct mouse_packet *out);
+
 // Terminates the calling program
 void exit(void);
 

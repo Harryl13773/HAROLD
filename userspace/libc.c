@@ -105,6 +105,11 @@ void rtc_read(struct rtc_time *out)
     __asm__ volatile("int $0x80" : : "a"(15), "b"(out) : "memory");
 }
 
+void mouse_read(struct mouse_packet *out)
+{
+    __asm__ volatile("int $0x80" : : "a"(16), "b"(out) : "memory");
+}
+
 void exit(void)
 {
     __asm__ volatile("int $0x80" : : "a"(1));

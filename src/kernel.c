@@ -8,6 +8,7 @@
 #include "pic.h"
 #include "irq.h"
 #include "keyboard.h"
+#include "mouse.h"
 #include "terminal.h"
 #include "multiboot.h"
 #include "pmm.h"
@@ -41,6 +42,7 @@ void kernel_main(uint32_t multiboot_addr)
     pic_remap();
     irq_install();
     keyboard_install();
+    mouse_install();
     pit_init(100);
 
     // Serial first — every terminal_writestring from here on also lands in a persistent,
