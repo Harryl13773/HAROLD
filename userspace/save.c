@@ -1,6 +1,8 @@
-// Creates a new file and writes a message into it — proves real FAT write support.
-// Takes an optional filename (argv[1]) and message (argv[2]); defaults to saved.txt and the
-// original fixed message with no arguments.
+/*
+Creates a new file and writes a message into it — proves real FAT write support.
+Takes an optional filename (argv[1]) and message (argv[2]); defaults to saved.txt and the
+original fixed message with no arguments.
+*/
 
 #include "libc.h"
 

@@ -1,6 +1,8 @@
-// Reads the same two raw addresses writer.elf wrote its secrets to, without ever writing to
-// either first — if isolation is working, both read whatever a fresh physical frame contains,
-// not the secret.
+/*
+Reads the same two raw addresses writer.elf wrote its secrets to, without ever writing to
+either first — if isolation is working, both read whatever a fresh physical frame contains,
+not the secret.
+*/
 
 #include "libc.h"
 

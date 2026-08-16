@@ -1,6 +1,7 @@
-// Creates a new, empty subdirectory — proves the FAT driver's subdirectory support end-to-end
-// when combined with any existing file-I/O program pointed at a path inside it (e.g.
-// "save.elf docs/notes.txt hello", "ls.elf docs").
+/*Creates a new, empty subdirectory — proves the FAT driver's subdirectory support end-to-end
+when combined with any existing file-I/O program pointed at a path inside it (e.g.
+"save.elf docs/notes.txt hello", "ls.elf docs").
+*/
 
 #include "libc.h"
 

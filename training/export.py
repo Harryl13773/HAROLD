@@ -25,8 +25,7 @@ b1_fx = to_fixed(b1)
 W2_fx = to_fixed(W2)
 b2_fx = to_fixed(b2)
 
-# --- Verify the quantized integer-only forward pass, exactly as the C
-# code will compute it (int64 accumulation, single shift at the end) ---
+# Verify the integer-only quantized forward pass matches the C implementation.
 def fixed_forward(x_fx, W1_fx, b1_fx, W2_fx, b2_fx):
     hidden = np.zeros(HIDDEN_SIZE, dtype=np.int64)
     for h in range(HIDDEN_SIZE):
@@ -55,7 +54,7 @@ for i in range(len(X_test)):
 
 print(f"Quantized (fixed-point) test accuracy: {correct}/{len(X_test)} = {correct/len(X_test):.4f}")
 
-# --- Pick one correctly-classified, held-out test image per digit for the demo ---
+# Pick one correctly-classified, held-out test image per digit for the demo
 chosen_images = []
 chosen_labels = []
 for digit in range(10):

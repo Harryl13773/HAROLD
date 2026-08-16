@@ -1,5 +1,7 @@
-// Resolves a hostname to an IPv4 address via dns_resolve() and prints it dotted-quad — proves the
-// DNS resolver and gateway-aware routing work end-to-end, not just in isolation.
+/*
+Resolves a hostname to an IPv4 address via dns_resolve() and prints it dotted-quad — proves the
+DNS resolver and gateway-aware routing work end-to-end, not just in isolation.
+*/
 
 #include "libc.h"
 

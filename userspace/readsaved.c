@@ -1,5 +1,7 @@
-// Reads and prints a file — proves a file written by save.elf really persisted to disk.
-// Takes an optional filename (argv[1]); defaults to saved.txt with no arguments.
+/*
+Reads and prints a file — proves a file written by save.elf really persisted to disk.
+Takes an optional filename (argv[1]); defaults to saved.txt with no arguments.
+*/
 
 #include "libc.h"
 

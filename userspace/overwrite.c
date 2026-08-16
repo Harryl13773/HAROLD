@@ -1,6 +1,8 @@
-// Overwrites a file with new, shorter content — proves FAT_OPEN_TRUNCATE really empties the old
-// file. Takes an optional filename (argv[1]) and message (argv[2]); defaults to saved.txt and
-// the original fixed message with no arguments.
+/*
+Overwrites a file with new, shorter content — proves FAT_OPEN_TRUNCATE really empties the old
+file. Takes an optional filename (argv[1]) and message (argv[2]); defaults to saved.txt and
+the original fixed message with no arguments.
+*/
 
 #include "libc.h"
 

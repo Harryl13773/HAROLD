@@ -171,11 +171,7 @@ int strcmp(const char *a, const char *b)
     return (unsigned char)*a - (unsigned char)*b;
 }
 
-// A first-fit free list over a fixed static array, same design as the kernel's own heap.c —
-// block header stored immediately before its payload, split on alloc, coalesced on free. Unlike
-// heap.c, no interrupt-disabling is needed here: this array lives inside the process's own
-// already-private segment (see elf.c), so no other task can ever touch it, and a process is
-// single-threaded — nothing else here to preempt into a half-updated free list.
+// First-fit process-local heap with block splitting and coalescing; no locking needed
 #define USER_HEAP_SIZE 65536
 #define MALLOC_ALIGNMENT 8
 #define MALLOC_MIN_SPLIT 16

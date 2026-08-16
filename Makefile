@@ -117,8 +117,7 @@ userspace/leakfd.elf: userspace/leakfd.c userspace/libc.c userspace/libc.h users
 	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
 	$(LD) -m elf_i386 -T userspace/linker.ld userspace/leakfd.o userspace/libc.o -o userspace/leakfd.elf
 
-# Exercises libc's malloc/free — proves the free list actually reuses freed space and doesn't
-# hand out overlapping memory
+# Tests malloc/free reuse without overlapping allocations
 userspace/malloctest.elf: userspace/malloctest.c userspace/libc.c userspace/libc.h userspace/linker.ld
 	$(CC) $(USERCFLAGS) -c userspace/malloctest.c -o userspace/malloctest.o
 	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
@@ -130,15 +129,13 @@ userspace/mkdir.elf: userspace/mkdir.c userspace/libc.c userspace/libc.h userspa
 	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
 	$(LD) -m elf_i386 -T userspace/linker.ld userspace/mkdir.o userspace/libc.o -o userspace/mkdir.elf
 
-# Writes text at a byte offset inside an existing file without truncating it — proves in-place
-# writes via fat_seek/FAT_OPEN_MODIFY
+# Writes at a file offset without truncating, testing in-place FAT writes
 userspace/poke.elf: userspace/poke.c userspace/libc.c userspace/libc.h userspace/linker.ld
 	$(CC) $(USERCFLAGS) -c userspace/poke.c -o userspace/poke.o
 	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
 	$(LD) -m elf_i386 -T userspace/linker.ld userspace/poke.o userspace/libc.o -o userspace/poke.elf
 
-# Resolves a hostname via dns_resolve() and prints its IP — proves the DNS resolver and
-# gateway-aware routing work end-to-end
+# Resolves a hostname and prints its IP to verify DNS and gateway routing
 userspace/nslookup.elf: userspace/nslookup.c userspace/libc.c userspace/libc.h userspace/linker.ld
 	$(CC) $(USERCFLAGS) -c userspace/nslookup.c -o userspace/nslookup.o
 	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
@@ -162,8 +159,7 @@ userspace/edit.elf: userspace/edit.c userspace/libc.c userspace/libc.h userspace
 	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
 	$(LD) -m elf_i386 -T userspace/linker.ld userspace/edit.o userspace/libc.o -o userspace/edit.elf
 
-# A text-mode desktop: box-drawing chrome, a live clock, a real directory listing as clickable
-# labels, and a taskbar — reuses the RTC/mouse drivers and the editor, all built this session
+# Text-mode desktop with box drawing, live clock, clickable directory entries, and taskbar
 userspace/gui.elf: userspace/gui.c userspace/libc.c userspace/libc.h userspace/linker.ld
 	$(CC) $(USERCFLAGS) -c userspace/gui.c -o userspace/gui.o
 	$(CC) $(USERCFLAGS) -c userspace/libc.c -o userspace/libc.o
@@ -177,8 +173,7 @@ run: kernel.bin disk.img
 run-iso: iso disk.img
 	qemu-system-x86_64 -boot d -cdrom harold.iso -drive file=disk.img,format=raw,if=ide -netdev user,id=n0 -device rtl8139,netdev=n0 -object filter-dump,id=f0,netdev=n0,file=harold_net.pcap
 
-# Real bidirectional host<->guest networking via macOS's vmnet framework — needs sudo, unlike run/run-iso.
-# No fixed subnet requested here on purpose — see the status doc for how to discover what macOS assigns.
+# Bidirectional host/guest networking via macOS vmnet; requires sudo and uses its assigned subnet
 run-vmnet: kernel.bin disk.img
 	sudo qemu-system-x86_64 -kernel kernel.bin -drive file=disk.img,format=raw,if=ide -netdev vmnet-host,id=n0 -device rtl8139,netdev=n0 -object filter-dump,id=f0,netdev=n0,file=harold_net.pcap
 

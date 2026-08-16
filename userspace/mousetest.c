@@ -1,5 +1,7 @@
-// Reads a bounded number of mouse packets and prints each one's movement/button state — proves
-// the PS/2 mouse driver end-to-end (move the mouse or click to generate packets).
+/*
+Reads a bounded number of mouse packets and prints each one's movement/button state — proves
+the PS/2 mouse driver end-to-end (move the mouse or click to generate packets).
+*/
 
 #include "libc.h"
 

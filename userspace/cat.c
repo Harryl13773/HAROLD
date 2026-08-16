@@ -1,5 +1,7 @@
-// "cat" — reads a file in small 16-byte chunks to exercise open/read/close. Takes the filename
-// as argv[1]; falls back to bigfile.txt with no arguments, for the original no-argv test.
+/*
+"cat" — reads a file in small 16-byte chunks to exercise open/read/close. Takes the filename
+as argv[1]; falls back to bigfile.txt with no arguments, for the original no-argv test.
+*/
 
 #include "libc.h"
 

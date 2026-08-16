@@ -1,6 +1,8 @@
-// Writes text at a specific byte offset inside an existing file, in place — proves fat_seek +
-// FAT_OPEN_MODIFY actually overwrite without truncating: bytes before the offset and after the
-// written text stay untouched, unlike overwrite.elf (which always empties the whole file first).
+/*
+Writes text at a specific byte offset inside an existing file, in place — proves fat_seek +
+FAT_OPEN_MODIFY actually overwrite without truncating: bytes before the offset and after the
+written text stay untouched, unlike overwrite.elf (which always empties the whole file first).
+*/
 
 #include "libc.h"
 

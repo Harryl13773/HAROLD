@@ -1,6 +1,8 @@
-// Lists every entry in a directory via listdir(), one index at a time until it returns -1 past
-// the last entry. argv[1] is an optional directory path ("" / omitted means root), argv[2] an
-// optional substring filter within it.
+/*
+Lists every entry in a directory via listdir(), one index at a time until it returns -1 past
+the last entry. argv[1] is an optional directory path ("" / omitted means root), argv[2] an
+optional substring filter within it.
+*/
 
 #include "libc.h"
 
@@ -27,9 +29,7 @@ static char to_lower(char c)
     return (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
 }
 
-// True if needle appears anywhere in haystack, case-insensitively — this FAT driver's directory
-// entries mix case inconsistently (short 8.3 names vs. case-preserved long names), so a
-// case-sensitive filter would silently miss real matches; libc only has exact, case-sensitive strcmp
+// Case-insensitive substring search for matching FAT filenames
 static int contains(const char *haystack, const char *needle)
 {
     for (int i = 0; haystack[i] != '\0'; i++)

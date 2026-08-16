@@ -1,5 +1,7 @@
-// Opens readme.txt and deliberately exits without ever closing it — run this more than
-// MAX_OPEN_FILES (8) times in a row; if leaked descriptors aren't reclaimed, the 9th run fails.
+/*
+Opens readme.txt and deliberately exits without ever closing it — run this more than
+MAX_OPEN_FILES (8) times in a row; if leaked descriptors aren't reclaimed, the 9th run fails.
+*/
 
 #include "libc.h"
 

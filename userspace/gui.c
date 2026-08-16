@@ -1,8 +1,10 @@
-// gui.elf — a text-mode desktop: box-drawing chrome, a live clock, a real directory listing as
-// clickable labels, and a taskbar. Every driver it needs already exists: rtc_read() for the
-// clock, mouse_read() for cursor/clicks, listdir()/run() to browse and launch real programs.
-// Pure text-mode VGA (80x25), no pixel graphics, no window manager — just one more userspace ELF
-// like any other, launched from and returning to the ordinary shell.
+/*
+gui.elf: a text-mode desktop: box-drawing chrome, a live clock, a real directory listing as
+clickable labels, and a taskbar. Every driver it needs already exists: rtc_read() for the
+clock, mouse_read() for cursor/clicks, listdir()/run() to browse and launch real programs.
+Pure text-mode VGA (80x25), no pixel graphics, no window manager — just one more userspace ELF
+like any other, launched from and returning to the ordinary shell.
+*/
 
 #include "libc.h"
 
@@ -12,8 +14,7 @@
 #define ATTR_NORMAL 0x0F
 #define ATTR_INVERT 0xF0
 
-// CP437 box-drawing glyphs — VGA text mode's built-in font, not Unicode, so these are raw byte
-// values rather than literal box-drawing characters in the source
+// CP437 box-drawing glyphs used directly as VGA font byte values
 #define CH_TL ((char)0xDA) // top-left corner
 #define CH_TR ((char)0xBF) // top-right corner
 #define CH_BL ((char)0xC0) // bottom-left corner
@@ -193,7 +194,7 @@ static void draw_title_bar(void)
     }
     clock_str[clen] = '\0';
 
-    unsigned int content_width = VGA_WIDTH - 2; // between the two vertical bars
+    unsigned int content_width = VGA_WIDTH - 2;         // between the two vertical bars
     unsigned int pad_target = content_width - clen - 1; // leave a space before the right border
     while (pos < pad_target)
     {
@@ -257,8 +258,8 @@ static void redraw_desktop(void)
     draw_taskbar();
 
     const char *hint = (current_dir[0] == '\0')
-                            ? " Click a folder to open it, a .elf to run it, or a file to edit it."
-                            : " Inside a folder -- click Home to go back to the root.";
+                           ? " Click a folder to open it, a .elf to run it, or a file to edit it."
+                           : " Inside a folder -- click Home to go back to the root.";
     draw_content_row(HINT_ROW, hint, ATTR_NORMAL);
 
     draw_border_row(24, CH_BL, CH_H, CH_BR);
@@ -279,8 +280,7 @@ static int hit_test_content_row(int row)
     return idx;
 }
 
-// Highlights whatever the cursor is currently over, then draws the cursor glyph on top — called
-// after redraw_desktop() so the highlight/cursor are never clobbered by the plain redraw
+// Highlights the hovered area and draws the cursor after the desktop redraw
 static void apply_hover_and_cursor(void)
 {
     int hovered_entry = hit_test_content_row(cursor_row);
@@ -309,9 +309,7 @@ static void apply_hover_and_cursor(void)
     draw_text(cursor_row, cursor_col, "*", 1, ATTR_INVERT);
 }
 
-// Resets the sequential terminal cursor/scroll state via the normal write() syscall (positioned
-// draw_text() calls never touch it) so the shell resumes on a clean blank screen instead of
-// continuing from wherever the cursor was left before this program ever started drawing
+// Resets terminal cursor state so the shell resumes on a clean screen
 static void clean_exit(void)
 {
     for (int i = 0; i < VGA_HEIGHT; i++)
@@ -321,8 +319,7 @@ static void clean_exit(void)
     exit();
 }
 
-// Handles a left click: navigates into a directory, runs a .elf, opens anything else in the
-// editor, or activates whichever taskbar button was clicked
+// Handles left clicks for navigation, launching, editing, and taskbar actions
 static void handle_click(void)
 {
     int hovered_entry = hit_test_content_row(cursor_row);

@@ -1,7 +1,8 @@
-// Exercises malloc/free: allocates several blocks, writes a distinct pattern into each, frees a
-// middle one and re-allocates a smaller size to prove the free list is reused (not just leaked
-// forward), then verifies every still-live block still holds its own untouched data — proving
-// the allocator isn't handing out overlapping memory.
+/*Exercises malloc/free: allocates several blocks, writes a distinct pattern into each, frees a
+middle one and re-allocates a smaller size to prove the free list is reused (not just leaked
+forward), then verifies every still-live block still holds its own untouched data — proving
+the allocator isn't handing out overlapping memory.
+*/
 
 #include "libc.h"
 
@@ -70,16 +71,14 @@ void _start(void)
     }
     report("d intact: ", d_intact);
 
-    // d should be at or before where b used to start — proof it actually reused freed space
-    // rather than just being handed fresh memory further up the heap
+    // Verify d reused freed space instead of fresh heap memory
     report("d reused b's freed space (d <= old b address): ", d != 0 && d <= b);
 
     free(a);
     free(c);
     free(d);
 
-    // After freeing everything, a big allocation should succeed again — proves free() actually
-    // returns space to the list rather than leaking it
+    // Verify freed memory is reusable with a large allocation
     char *big = (char *)malloc(60000);
     report("malloc big after freeing everything: ", big != 0);
 

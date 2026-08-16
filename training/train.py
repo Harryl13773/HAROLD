@@ -4,7 +4,7 @@ built-in handwritten digits dataset (8x8 images, the same task as MNIST,
 just lower resolution -- chosen because it ships with scikit-learn itself,
 no external dataset download required).
 
-Pure numpy, no deep learning framework -- simple enough to hand-translate
+Pure numpy, no deep learning framework, simple enough to hand-translate
 into C for the kernel's inference program later.
 """
 import numpy as np

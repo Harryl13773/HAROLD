@@ -1,6 +1,8 @@
-// Appends another line to a file — proves FAT_OPEN_APPEND resumes from the file's real end.
-// Takes an optional filename (argv[1]) and message (argv[2]); defaults to saved.txt and the
-// original fixed message with no arguments.
+/*
+Appends another line to a file, proves FAT_OPEN_APPEND resumes from the file's real end.
+Takes an optional filename (argv[1]) and message (argv[2]); defaults to saved.txt and the
+original fixed message with no arguments.
+*/
 
 #include "libc.h"
 

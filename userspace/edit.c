@@ -1,8 +1,9 @@
-// A basic line editor for interactively viewing and editing a text file — everything else
-// (save/append/overwrite/poke) can only ever write a single shell argument's worth of content.
-// No cursor addressing or full-screen redraw, since this shell/terminal has neither — commands
-// operate on line numbers instead, the same way classic Unix `ed` does.
-
+/*
+A basic line editor for interactively viewing and editing a text file, everything else
+(save/append/overwrite/poke) can only ever write a single shell argument's worth of content.
+No cursor addressing or full-screen redraw, since this shell/terminal has neither, commands
+operate on line numbers instead, the same way classic Unix `ed` does.
+*/
 
 #include "libc.h"
 
@@ -23,9 +24,7 @@ static void print_int(int value)
     write(buf, (unsigned int)len);
 }
 
-// Reads one line of typed input, handling backspace — the raw read() syscall alone doesn't (the
-// shell's own command-line reader handles it before ever reaching a syscall boundary; a
-// userspace program reading its own stdin has to do this itself)
+// Reads a line from stdin with backspace handling
 static int read_line(char *buf, int max_len)
 {
     int count = 0;
