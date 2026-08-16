@@ -12,9 +12,7 @@
 
 #define UDP_CAPTURE_BUF_SIZE 512
 
-// One-shot capture state for a synchronous request/reply caller (dns_resolve) — only one such
-// exchange is ever in flight at a time on this stack, matching the "single pending thing" pattern
-// already used elsewhere (TCP's one outstanding segment).
+// One-shot capture state for a single synchronous request/reply exchange
 static int capture_armed = 0;
 static uint16_t capture_port;
 static int capture_ready = 0;
@@ -25,13 +23,13 @@ static uint8_t capture_source_ip[4];
 // Sends a UDP datagram wrapped in IP and Ethernet headers, with a correctly computed pseudo-header checksum
 void udp_send(uint16_t source_port, uint16_t dest_port, const uint8_t dest_ip[4], const uint8_t dest_mac[6], const uint8_t *payload, uint16_t payload_len)
 {
-    // Layout: [12-byte pseudo-header][8-byte UDP header][payload] — the pseudo-header is checksum-only, never sent
+    // Layout: [12-byte pseudo-header][8-byte UDP header][payload], the pseudo-header is checksum-only, never sent
     uint8_t buf[PSEUDO_HEADER_LEN + UDP_HEADER_LEN + 1472];
     uint8_t *udp_hdr = buf + PSEUDO_HEADER_LEN;
     uint8_t *udp_payload = udp_hdr + UDP_HEADER_LEN;
 
     uint16_t max_payload = sizeof(buf) - PSEUDO_HEADER_LEN - UDP_HEADER_LEN;
-    if (payload_len > max_payload) // defensive clamp — shouldn't trigger for a normal echo
+    if (payload_len > max_payload) // defensive clamp, shouldn't trigger for a normal echo
     {
         payload_len = max_payload;
     }
@@ -68,7 +66,7 @@ void udp_send(uint16_t source_port, uint16_t dest_port, const uint8_t dest_ip[4]
     }
 
     uint16_t csum = ip_checksum(buf, PSEUDO_HEADER_LEN + udp_len);
-    if (csum == 0) // an all-zero checksum means "none computed" per RFC 768 — 0xFFFF is the real value in that case
+    if (csum == 0) // an all-zero checksum means "none computed" per RFC 768, 0xFFFF is the real value in that case
     {
         csum = 0xFFFF;
     }
@@ -120,8 +118,7 @@ void udp_receive(const uint8_t source_ip[4], const uint8_t source_mac[6], const 
     }
 }
 
-// Arms a one-shot capture for the next datagram arriving on local_port, so a synchronous
-// request/reply protocol (like DNS) can correlate its own response
+// Captures the next datagram on local_port for a synchronous reply
 void udp_arm_response_capture(uint16_t local_port)
 {
     capture_ready = 0;
@@ -129,8 +126,7 @@ void udp_arm_response_capture(uint16_t local_port)
     capture_armed = 1;
 }
 
-// Blocks (via hlt) until the armed capture receives a datagram or timeout_ticks elapses; returns
-// the payload length copied into buf and fills out_source_ip, or -1 on timeout
+// Waits for a captured datagram; returns its length or -1 on timeout
 int udp_wait_for_response(uint8_t *buf, uint32_t buf_size, uint8_t out_source_ip[4], uint32_t timeout_ticks)
 {
     uint32_t start = pit_get_ticks();

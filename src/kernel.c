@@ -61,11 +61,7 @@ void kernel_main(uint32_t multiboot_addr)
     if (rtl8139_is_present())
     {
 
-        // Placeholder addresses (RFC 5737 TEST-NET-1) — replace bridge_ip/our_ip with your
-        // actual gateway and a free address on your own LAN before running with vmnet-host;
-        // these won't resolve on a real network as-is
-        //
-        // Resolve the host MAC twice to verify both ARP and cache lookup
+        // Resolve the host MAC twice to verify ARP and caching
         uint8_t bridge_ip[4] = {192, 0, 2, 1};
         uint8_t bridge_mac[6];
         arp_resolve(bridge_ip, bridge_mac);

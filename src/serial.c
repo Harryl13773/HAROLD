@@ -1,6 +1,8 @@
-// COM1 serial driver: a persistent log outside the 25-row VGA buffer, so scrolled-off history
-// (including exactly when a fault happened relative to everything else) is never actually lost —
-// QEMU's -serial flag captures it to a file/stdio even in a headless run.
+/*
+COM1 serial driver: a persistent log outside the 25-row VGA buffer, so scrolled-off history
+(including exactly when a fault happened relative to everything else) is never actually lost,
+QEMU's -serial flag captures it to a file/stdio even in a headless run.
+*/
 
 #include <stdint.h>
 #include "io.h"
@@ -16,8 +18,7 @@ static char serial_rx_buffer[SERIAL_RX_BUFFER_SIZE];
 static volatile int serial_rx_head = 0;
 static volatile int serial_rx_tail = 0;
 
-// Queues a received byte for serial_read_char; drops it if the buffer is full — same circular
-// buffer pattern as keyboard.c's kb_buffer_push
+// Queues a received byte, dropping it if the serial buffer is full
 static void serial_rx_push(char c)
 {
     int next = (serial_rx_head + 1) % SERIAL_RX_BUFFER_SIZE;
@@ -56,11 +57,9 @@ void serial_init(void)
     outb(COM1 + 2, 0xC7); // enable + clear the FIFOs, 14-byte trigger
     outb(COM1 + 4, 0x0B); // DTR/RTS set, OUT2 set — OUT2 is what actually lets the UART drive IRQ4
 
-    irq_set_handler(4, serial_handler); // COM1 is IRQ4 on legacy PC wiring; register before
-                                         // enabling the interrupt below so it's never unhandled
-    pic_unmask_irq(4); // nothing has ever needed this line before — don't assume the BIOS left it
-                        // unmasked, unlike keyboard/PIT/NIC which demonstrably already are
-    outb(COM1 + 1, 0x01); // enable "received data available" interrupts
+    irq_set_handler(4, serial_handler); // Register COM1's IRQ4 handler before enabling interrupts.
+    pic_unmask_irq(4);                  // Explicitly unmask IRQ4.
+    outb(COM1 + 1, 0x01);               // Enable receive-data interrupts.
 }
 
 // Bit 5 of the line status register — set when the transmit holding register can accept a byte

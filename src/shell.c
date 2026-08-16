@@ -1,5 +1,7 @@
-// Interactive shell task: reads a command line from the keyboard or serial (COM1), splits it into
-// argv, and runs argv[0] as an ELF program with the rest as its arguments.
+/*
+Interactive shell task: reads a command line from the keyboard or serial (COM1), splits it into
+argv, and runs argv[0] as an ELF program with the rest as its arguments.
+*/
 
 #include "console.h"
 #include "terminal.h"
@@ -8,9 +10,7 @@
 #include "usermode.h"
 #include "shell.h"
 
-// Set by the shell right before creating the launch task — safe as a shared buffer since the
-// shell always waits (task_wait) before reusing it for the next command. shell_argv points into
-// shell_command_line itself (tokenize() splits it in place), so both share the same lifetime.
+// Stores launch arguments until the shell's task_wait completes
 static char shell_command_line[256];
 static char *shell_argv[MAX_ARGS];
 static int shell_argc;
@@ -51,15 +51,7 @@ static int shell_read_line(char *buf, int max_len)
     return count;
 }
 
-// Splits line in place on spaces into up to max_args tokens, argv[0] the program name. A token
-// wrapped in double quotes is kept as a single argument even if it contains spaces — e.g.
-// save.elf notes.txt "hello world" passes argv[2] = "hello world", not just "hello" with "world"
-// silently dropped. The quotes themselves are stripped, not part of the returned token. An
-// unterminated quote just runs to the end of the line rather than erroring.
-//
-// Returns the argument count (1..max_args), 0 for an empty/all-whitespace line, or -1 if the line
-// has more arguments than max_args allows — the caller refuses to launch rather than silently
-// running with some of them dropped.
+// Tokenizes a command line, preserving quoted arguments; returns argc, 0 if empty, or -1 if too many
 static int tokenize(char *line, char **argv, int max_args)
 {
     int argc = 0;

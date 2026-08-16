@@ -57,13 +57,11 @@ void terminal_initialize(void)
 // Handles one character: printable, '\n', or '\b', with wrap + scroll
 void terminal_putchar(char c)
 {
-    // Video memory + cursor position is shared, global state with no other synchronization — the
-    // same category of bug already found and fixed for the heap and the FAT descriptor table.
-    // Without this, two tasks writing at once (including a scroll mid-copy) tears the output.
+
+    // Protect shared video and cursor state from concurrent writes
     uint32_t flags = save_and_disable_interrupts();
 
-    // Mirrored to serial so nothing that ever appeared on screen is lost once VGA scrolls it away
-    // — a fault banner's position in this stream now always matches when it actually happened
+    // Mirror output to serial so scrolled VGA text remains logged in order
     serial_putchar(c);
 
     if (c == '\n')
@@ -108,8 +106,8 @@ void terminal_putchar(char c)
 // Writes a full string via terminal_putchar
 void terminal_writestring(const char *str)
 {
-    // Also protected as a whole string, not just per-character — otherwise two tasks' strings
-    // could still interleave line-by-line even with terminal_putchar itself made atomic
+
+    // Protect the whole string to prevent output from different tasks interleaving
     uint32_t flags = save_and_disable_interrupts();
 
     for (size_t i = 0; str[i] != '\0'; i++)
@@ -156,10 +154,7 @@ void terminal_print_dec(uint32_t value)
     }
 }
 
-// Writes len characters starting at (row, col) with a raw VGA attribute byte (0x0F = white on
-// black, 0xF0 = inverted), independent of the sequential cursor/scroll and not mirrored to
-// serial — for a positioned-drawing consumer (a text-mode GUI) managing its own full-screen
-// layout, not appending to a scrolling log. Clips rather than wraps past the screen edges.
+// Draws positioned VGA text with a raw attribute, clipping at screen edges
 void terminal_draw_text(int row, int col, const char *text, int len, uint8_t attr)
 {
     if (row < 0 || row >= VGA_HEIGHT)

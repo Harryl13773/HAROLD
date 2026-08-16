@@ -89,10 +89,7 @@ void pmm_init(struct multiboot_info *info, uint32_t kernel_end)
     used_frames = 0;
 }
 
-// Finds and reserves the first free frame. Self-protected like heap.c's kmalloc/fat.c's fat_open
-// — this bitmap is shared across every task and interrupt context that ever allocates memory
-// (task.c, paging.c, elf.c, usermode.c), so every caller needs this atomic regardless of whether
-// it also wraps its own call site; nesting save_and_disable_interrupts is safe (see io.h).
+// Atomically finds and reserves the first free physical frame
 uint32_t pmm_alloc_frame(void)
 {
     uint32_t flags = save_and_disable_interrupts();

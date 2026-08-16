@@ -1,6 +1,8 @@
-// CMOS Real-Time Clock driver: reads the current wall-clock date/time from the MC146818-compatible
-// RTC via ports 0x70 (index) / 0x71 (data) — no interrupts, polled on demand, same as this
-// project's other simple hardware reads (ATA sector reads, PCI config space).
+/*
+CMOS Real-Time Clock driver: reads the current wall-clock date/time from the MC146818-compatible
+RTC via ports 0x70 (index) / 0x71 (data) — no interrupts, polled on demand, same as this
+project's other simple hardware reads (ATA sector reads, PCI config space).
+*/
 
 #include <stdint.h>
 #include "io.h"
@@ -25,8 +27,7 @@ static uint8_t cmos_read(uint8_t reg)
     return inb(CMOS_DATA);
 }
 
-// Status Register A bit 7 — set while the RTC is mid-update, meaning the time registers may be
-// torn (e.g. seconds rolled over between reading minutes and hours) if read right now
+// RTC Status A bit 7 indicates an update in progress, so time registers may be inconsistent
 static int cmos_update_in_progress(void)
 {
     return cmos_read(CMOS_REG_STATUS_A) & 0x80;
@@ -62,13 +63,10 @@ static int snapshots_equal(const struct cmos_snapshot *a, const struct cmos_snap
            a->day == b->day && a->month == b->month && a->year == b->year;
 }
 
-// Reads the current date/time from the CMOS RTC, correcting for BCD encoding, 12-hour mode, and
-// the update-in-progress race (reads repeatedly until two consecutive snapshots agree)
+// Reads the RTC date/time, handling BCD, 12-hour mode, and update races
 void rtc_read(struct rtc_time *out)
 {
-    // Standard "read until stable" technique: wait out any in-progress update, take a snapshot,
-    // then keep re-reading until two consecutive snapshots agree — the only reliable way to read
-    // a live, ticking RTC without a torn result
+    // Read repeatedly until two RTC snapshots match to avoid torn timestamps
     struct cmos_snapshot current;
 
     while (cmos_update_in_progress())
@@ -118,8 +116,7 @@ void rtc_read(struct rtc_time *out)
     out->hour = current.hour;
     out->day = current.day;
     out->month = current.month;
-    // CMOS only ever stores a 2-digit year — 2000+ is a safe assumption for this project's era.
-    // QEMU's emulated CMOS mirrors the real host clock, so this is directly checkable against the
-    // actual date, unlike most of this project's other hardware-facing code.
+
+    // CMOS stores a 2-digit year; assume 2000+ for this project
     out->year = (uint16_t)(2000 + current.year);
 }

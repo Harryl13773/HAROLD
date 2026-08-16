@@ -79,23 +79,14 @@ uint32_t *task_get_current_page_directory(void)
     return tasks[current_task].page_directory;
 }
 
-// Frees a task's stack, open file descriptors, private page tables/data frames, and its cloned
-// directory once it has exited
+// Frees an exited task's resources and address space
 void task_reap(void)
 {
     for (int i = 1; i < task_count; i++)
     {
         if (tasks[i].state == TASK_UNUSED && tasks[i].stack_base != NULL)
         {
-            // No outer atomic block needed here, unlike earlier versions of this function: kfree,
-            // fat_close_all_for_task, and pmm_free_frame (called directly and via
-            // paging_free_user_directory) are all now individually self-protected against a timer
-            // interrupt landing mid-call. The one invariant task_create's claim check actually
-            // depends on — state == TASK_UNUSED, stack_base == NULL, and page_directory == NULL
-            // never all becoming true until cleanup genuinely finishes — is preserved by leaving
-            // page_directory non-NULL until the very last line below. That final assignment is a
-            // single aligned store, which an interrupt can't land in the middle of, so it needs no
-            // extra protection either. Don't reorder these three steps without re-checking this.
+            // Cleanup helpers are atomic; clear page_directory last so the task isn't reusable before cleanup finishes
             kfree(tasks[i].stack_base);
             tasks[i].stack_base = NULL;
 
@@ -133,11 +124,8 @@ void tasking_init(void)
 // Hand-builds a new task's stack; reuses an already-reaped slot before growing task_count
 int task_create(void (*entry_point)(void))
 {
-    // The slot scan and task_count growth below need no locking: task_create() is never called
-    // concurrently with itself (only from kernel_main at boot, sequentially, and later only from
-    // shell_task, which always task_wait()s for one launched task to exit before creating the
-    // next), and task_reap() never touches task_count. A slot only looks free here once task_reap
-    // has fully finished with it (see the comment there), so no race with reaping either.
+
+    // No locking needed: task_create runs serially, and reaped slots are exposed only after cleanup
     int id = -1;
 
     for (int i = 1; i < task_count; i++)
@@ -159,9 +147,7 @@ int task_create(void (*entry_point)(void))
         task_count++;
     }
 
-    // Everything below builds into locals, nothing touches tasks[id] yet — so however long the
-    // kmalloc/directory clone take, task_reap() has nothing to prematurely see, because this slot
-    // still reads exactly as it did before this call (fully reaped, all NULL/UNUSED).
+    // Build resources in locals first so the task slot stays untouched until setup is complete
     uint32_t *new_stack_base = (uint32_t *)kmalloc(TASK_STACK_SIZE);
     if (new_stack_base == NULL)
     {
@@ -190,10 +176,7 @@ int task_create(void (*entry_point)(void))
     *(--stack_top) = 0;                     // fake saved esi
     *(--stack_top) = 0;                     // fake saved edi — becomes this task's esp
 
-    // Publish everything atomically — this is the only part of task_create that still needs
-    // interrupts disabled. task_reap()'s reap condition must never see stack_base non-NULL while
-    // state is still TASK_UNUSED, so all of these fields have to become visible together; every
-    // field here is a plain assignment now, not a kmalloc/clone, so this is O(1), not O(setup).
+    // Publish the completed task atomically so no partial state is visible
     uint32_t flags = save_and_disable_interrupts();
 
     struct task *t = &tasks[id];

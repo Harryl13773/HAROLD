@@ -223,7 +223,7 @@ int rtl8139_receive_packet(uint8_t *out_buffer, uint16_t max_len)
         uint16_t size = *(uint16_t *)(rx_buffer + rx_read_offset + 2); // includes the trailing 4-byte CRC
 
         uint16_t packet_len = 0;
-        if (status & 0x01) // ROK — a good packet, not a receive error
+        if (status & 0x01)
         {
             packet_len = size - 4; // drop the CRC — callers only want the real frame
             if (packet_len > max_len)
@@ -232,7 +232,7 @@ int rtl8139_receive_packet(uint8_t *out_buffer, uint16_t max_len)
             }
             for (uint16_t i = 0; i < packet_len; i++)
             {
-                out_buffer[i] = rx_buffer[rx_read_offset + 4 + i]; // no wraparound here — the +1500 pad guarantees this stays contiguous
+                out_buffer[i] = rx_buffer[rx_read_offset + 4 + i];
             }
         }
 
@@ -248,7 +248,6 @@ int rtl8139_receive_packet(uint8_t *out_buffer, uint16_t max_len)
         {
             return packet_len;
         }
-        // a bad (non-ROK) packet was skipped — the ring already advanced, so loop back and check the next entry
     }
 
     return 0; // ring is genuinely empty right now

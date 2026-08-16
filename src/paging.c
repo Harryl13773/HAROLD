@@ -33,10 +33,8 @@ static inline void enable_paging(void)
 // Identity-maps the first 4MB and enables paging
 void paging_init(void)
 {
-    // Kernel-only by default: ring 0 access is never restricted by the U/S bit, so the kernel,
-    // interrupts, and syscalls keep working unchanged no matter which task's directory is loaded.
-    // A ring-3 task only ever sees an address here if it's explicitly remapped PAGE_USER into that
-    // task's own private table (see paging_map_user_page) — e.g. its ELF segment and its stack.
+
+    // Kernel-only by default; ring 3 sees only pages explicitly mapped with PAGE_USER
     for (uint32_t i = 0; i < ENTRIES; i++)
     {
         first_page_table[i] = (i * PAGE_SIZE) | PAGE_PRESENT | PAGE_WRITABLE;
@@ -78,9 +76,7 @@ uint32_t *paging_clone_kernel_directory(void)
         return NULL; // out of memory
     }
 
-    // Paging only maps the first 4MB right now (see paging_init above) — a frame beyond that is
-    // physically real but has no mapping yet, so treating it as a directly-usable pointer would
-    // silently corrupt whatever's actually at that virtual address. Refuse rather than risk it.
+    // Reject frames outside the currently mapped 4MB to avoid invalid virtual access
     if (phys >= 0x400000)
     {
         pmm_free_frame(phys);
@@ -103,8 +99,7 @@ void paging_switch_directory(uint32_t *dir)
     load_page_directory(dir);
 }
 
-// Allocates a fresh page table pre-populated with the kernel's own mappings — the starting point
-// for a process's private view of one 4MB region, before its own segments get remapped on top
+// Creates a page table with kernel mappings for a process's private 4MB region
 static uint32_t *paging_alloc_user_page_table(void)
 {
     uint32_t phys = pmm_alloc_frame();
@@ -136,9 +131,7 @@ static uint32_t *paging_alloc_user_page_table(void)
     return table;
 }
 
-// Gives a directory its own private page table for vaddr's 4MB region, or returns the existing
-// one if a previous call already created it (so loading multiple PT_LOAD segments of the same
-// ELF, all within the same 4MB region, doesn't allocate a second table by mistake)
+// Gets or creates a private page table for vaddr's 4MB region
 uint32_t *paging_get_or_create_user_table(uint32_t *dir, uint32_t vaddr)
 {
     uint32_t dir_index = vaddr / (PAGE_SIZE * ENTRIES);

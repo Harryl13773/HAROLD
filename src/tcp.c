@@ -186,22 +186,15 @@ static void tcp_send_segment(struct tcp_connection *conn, uint8_t flags, uint32_
     ip_send(6, conn->remote_ip, conn->remote_mac, tcp_hdr, tcp_len);
 }
 
-// Takes an RTT sample from the segment currently pending on conn and folds it into the RTO
-// estimate (Jacobson's algorithm, RFC 6298 section 2), then clears conn->pending — called from
-// every path that confirms our last send was actually ACKed.
+// Updates the RTO from the pending segment's RTT sample, then clears it
 static void tcp_rtt_sample(struct tcp_connection *conn)
 {
-    if (conn->retransmit_count == 0) // Karn's algorithm: skip the sample if this segment was ever
-                                     // retransmitted — an ACK arriving after a resend is
-                                     // ambiguous (original or resend?), and using it would risk
-                                     // corrupting the estimate with a bogus RTT
+    if (conn->retransmit_count == 0) // Karn's algorithm: ignore RTT samples from retransmitted segments
     {
         uint32_t measured = pit_get_ticks() - conn->last_send_tick;
         if (measured == 0)
         {
-            measured = 1; // PIT ticks are coarse (10ms each) — never treat a same-tick round trip
-                          // as literally zero, or the estimator collapses toward an
-                          // unrealistically tight RTO
+            measured = 1; // Clamp same-tick RTTs to one PIT tick to avoid an unrealistically low RTO
         }
 
         if (!conn->rtt_valid)
@@ -221,8 +214,7 @@ static void tcp_rtt_sample(struct tcp_connection *conn)
             conn->rttvar = (uint32_t)((int32_t)conn->rttvar + (delta - (int32_t)(conn->rttvar >> 2)));
         }
 
-        // rttvar is already scaled *4, which is exactly RFC 6298's K=4 multiplier — so
-        // srtt/8 + rttvar (as stored) directly gives SRTT + 4*RTTVAR with no extra multiply
+        // rttvar is stored scaled by 4, so this directly computes SRTT + 4*RTTVAR
         conn->rto = (conn->srtt >> 3) + conn->rttvar;
         if (conn->rto < TCP_RTO_MIN_TICKS)
         {
@@ -298,8 +290,7 @@ void tcp_check_retransmits(void)
         conn->last_send_tick = now;
         conn->retransmit_count++;
 
-        conn->current_rto *= 2; // RFC 6298 exponential backoff — doesn't touch the underlying
-                                // srtt/rttvar estimate itself, only this segment's own timeout
+        conn->current_rto *= 2; // RFC 6298 backoff: increase this segment's timeout without changing the RTT estimate
         if (conn->current_rto > TCP_RTO_MAX_TICKS)
         {
             conn->current_rto = TCP_RTO_MAX_TICKS;
@@ -331,9 +322,9 @@ void tcp_receive(const uint8_t source_ip[4], const uint8_t source_mac[6], const 
 
     struct tcp_connection *conn = tcp_find_connection(source_ip, source_port);
 
-    if (conn && (flags & TCP_FLAG_RST)) // a reset means "forget this immediately" — no response is ever sent for a RST
+    if (conn && (flags & TCP_FLAG_RST)) // a reset, no response is ever sent for a RST
     {
-        conn->state = TCP_CLOSED; // frees the slot — without this, a client that crashes or force-closes leaves it stuck forever
+        conn->state = TCP_CLOSED; // frees the slot, without this, a client that crashes or force-closes leaves it stuck forever
         conn->pending = 0;
         terminal_writestring("TCP: RST received, connection aborted\n");
         return;
@@ -369,8 +360,7 @@ void tcp_receive(const uint8_t source_ip[4], const uint8_t source_mac[6], const 
         conn->rx_tail = 0;
         conn->rx_closed = 0;
         conn->accepted = 0;
-        conn->rtt_valid = 0; // fresh connection, fresh RTT estimate — don't inherit a stale
-                             // srtt/rttvar from whatever this slot held before
+        conn->rtt_valid = 0; // Reset the RTT estimate for the new connection
 
         tcp_send_tracked(conn, TCP_FLAG_SYN | TCP_FLAG_ACK, conn->our_seq, 0, 0);
         conn->our_seq++; // our own SYN also consumes one sequence number
@@ -388,8 +378,7 @@ void tcp_receive(const uint8_t source_ip[4], const uint8_t source_mac[6], const 
         if (ack == conn->our_seq && seq == conn->their_seq)
         {
             conn->state = TCP_ESTABLISHED;
-            tcp_rtt_sample(conn); // the SYN-ACK is now confirmed — nothing left to retransmit,
-                                  // and this is also this connection's very first RTT sample
+            tcp_rtt_sample(conn); // SYN-ACK confirmed; clear retransmission state and record the first RTT sample
             terminal_writestring("TCP: connection established\n");
         }
         return;
@@ -428,7 +417,7 @@ void tcp_receive(const uint8_t source_ip[4], const uint8_t source_mac[6], const 
             conn->rx_closed = 1;          // signals EOF to a blocked socket_recv() once the queued data is drained
             conn->state = TCP_CLOSE_WAIT; // they're done sending — we might still have data left to send, though
 
-            tcp_send_segment(conn, TCP_FLAG_ACK, conn->our_seq, conn->their_seq, 0, 0); // ack their FIN — no FIN of our own yet
+            tcp_send_segment(conn, TCP_FLAG_ACK, conn->our_seq, conn->their_seq, 0, 0); // ack their FIN, no FIN of our own yet
             terminal_writestring("TCP: FIN received, half-closed\n");
             return;
         }
@@ -451,16 +440,12 @@ void tcp_receive(const uint8_t source_ip[4], const uint8_t source_mac[6], const 
             conn->state = TCP_CLOSED;
             terminal_writestring("TCP: connection closed\n");
         }
-        if (conn->pending) // only take a sample if something was actually outstanding to time —
-                           // tcp_rtt_sample reads last_send_tick unconditionally, which would be
-                           // stale/meaningless data if nothing was really pending
+        if (conn->pending) // Only sample RTT when a segment is actually pending
         {
             tcp_rtt_sample(conn);
         }
         return;
     }
-
-    // If we get here, the segment didn't match any state we're actively tracking — nothing to do
 }
 
 // Blocks until some connection reaches ESTABLISHED and hasn't already been claimed, then returns its index
@@ -520,7 +505,7 @@ int tcp_socket_send(int sockfd, const uint8_t *buf, uint32_t len)
         return -1;
     }
 
-    if (len > 1460) // one segment's worth — no fragmentation across multiple segments yet
+    if (len > 1460) // one segment's worth, no fragmentation across multiple segments yet
     {
         len = 1460;
     }

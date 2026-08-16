@@ -17,15 +17,10 @@ void usermode_enter(void (*entry)(void), int argc, char *const argv[])
 {
     if (argc > MAX_ARGS)
     {
-        argc = MAX_ARGS; // backstop for any caller that doesn't already validate this itself —
-                          // the shell refuses an oversized command line before ever reaching here
+        argc = MAX_ARGS; // Reject oversized arguments as a backstop for callers that don't validate them
     }
 
-    // Refuse up front, before allocating or mapping anything, rather than risk writing below this
-    // stack's own page (into whatever's mapped, or isn't, at that address) if a future change to
-    // MAX_ARGS or the shell's line length ever lets the real content exceed what USER_STACK_SIZE
-    // can hold. Sum of every string's length+NUL, the pointer array (argc+1 entries), and the
-    // 3-word fake call frame — the exact layout built below.
+    // Ensure the arguments and call frame fit in the user stack before allocating or mapping
     uint32_t needed = 0;
     for (int i = 0; i < argc; i++)
     {
@@ -46,10 +41,7 @@ void usermode_enter(void (*entry)(void), int argc, char *const argv[])
         return; // command line too large to fit this process's stack page
     }
 
-    // A genuinely private frame for this task's stack, mapped PAGE_USER at a fixed VA in the
-    // same private table its ELF segment already lives in — same treatment elf.c gives the
-    // segment itself, so no other task can read or write it. Freed automatically by
-    // paging_free_user_directory() in task_reap(), same as the segment's frames are.
+    // Allocate and map a private user stack frame, freed with the task's address space
     uint32_t stack_frame = pmm_alloc_frame();
     if (stack_frame == 0)
     {
@@ -76,8 +68,7 @@ void usermode_enter(void (*entry)(void), int argc, char *const argv[])
     uint8_t *stack = (uint8_t *)USER_STACK_VADDR;
     uint8_t *top = stack + USER_STACK_SIZE;
 
-    // Copy each argument string onto the user stack itself — already privately mapped above —
-    // so the new process can read its own argv with no additional mapping work
+    // Copy arguments onto the private user stack for direct argv access
     char *copied[MAX_ARGS];
     for (int i = argc - 1; i >= 0; i--)
     {
@@ -108,11 +99,7 @@ void usermode_enter(void (*entry)(void), int argc, char *const argv[])
     }
     argv_array[argc] = NULL;
 
-    // A fake cdecl call frame — [return address][argc][argv] — so a normal
-    // void _start(int argc, char **argv) reads them exactly as if it had been `call`ed rather than
-    // jumped to directly. The fake return address is 0: if a program's _start ever falls through
-    // instead of calling exit(), "returning" here page-faults, which fault_handler already turns
-    // into a clean ring-3 task termination instead of a halt.
+    // Build a fake cdecl frame so _start(argc, argv) works; returning faults cleanly at address 0
     uint32_t *frame = (uint32_t *)top;
     *(--frame) = (uint32_t)argv_array;
     *(--frame) = (uint32_t)argc;

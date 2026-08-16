@@ -20,10 +20,7 @@ void terminal_print_hex(uint32_t value);
 // Prints a 32-bit value as decimal
 void terminal_print_dec(uint32_t value);
 
-// Writes len characters starting at (row, col) with a raw VGA attribute byte (0x0F = white on
-// black, 0xF0 = inverted), independent of the sequential cursor/scroll and not mirrored to
-// serial — for a positioned-drawing consumer (a text-mode GUI) managing its own full-screen
-// layout, not appending to a scrolling log. Clips rather than wraps past the screen edges.
+// Draws positioned VGA text with a raw attribute, clipping at screen edges
 void terminal_draw_text(int row, int col, const char *text, int len, uint8_t attr);
 
 #endif

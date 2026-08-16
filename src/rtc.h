@@ -5,8 +5,7 @@
 
 #include <stdint.h>
 
-// A snapshot of wall-clock time as read from the CMOS RTC — exactly what the hardware clock is
-// set to (no timezone handling), already converted out of BCD/12-hour format
+// Wall-clock time read from the CMOS RTC, converted from BCD/12-hour format
 struct rtc_time
 {
     uint16_t year;  // full 4-digit year, e.g. 2026
@@ -17,8 +16,7 @@ struct rtc_time
     uint8_t second; // 0-59
 };
 
-// Reads the current date/time from the CMOS RTC, correcting for BCD encoding, 12-hour mode, and
-// the update-in-progress race (reads repeatedly until two consecutive snapshots agree)
+// Reads the RTC date/time, handling BCD, 12-hour mode, and update races
 void rtc_read(struct rtc_time *out);
 
 #endif

@@ -56,8 +56,7 @@ static uint8_t ps2_read_data(void)
     return inb(PS2_DATA_PORT);
 }
 
-// Sends a command byte to the mouse itself, routed through the controller's second port, and
-// reads back its ACK (0xFA) — not checked; a real driver would retry on NAK, out of scope here
+// Sends a mouse command through the controller and reads its ACK
 static void mouse_send_command(uint8_t cmd)
 {
     ps2_write_command(0xD4); // "next data-port byte goes to the second (mouse) port"
@@ -90,8 +89,7 @@ static void mouse_handler(void)
 {
     uint8_t data = inb(PS2_DATA_PORT);
 
-    if (packet_index == 0 && !(data & 0x08)) // bit 3 is always set on a real byte 0 — a cheap
-                                             // sync check; if it's clear, this can't be a byte 0
+    if (packet_index == 0 && !(data & 0x08)) // Bit 3 must be set in byte 0, providing a simple sync check
     {
         return; // out of sync — drop it and keep waiting for a real byte 0
     }
@@ -110,30 +108,19 @@ static void mouse_handler(void)
     p.right_button = (flags & 0x02) != 0;
     p.middle_button = (flags & 0x04) != 0;
 
-    // Movement is a signed 9-bit value: an 8-bit magnitude plus a sign bit in the flags byte.
-    // When the sign bit is set, the byte is already the low 8 bits of a two's-complement value,
-    // so subtracting 256 sign-extends it correctly. An overflow bit means the counter wrapped —
-    // the value is meaningless, so that axis is reported as no movement rather than a bogus jump.
+    // Decode signed movement; ignore axes with overflow to prevent bogus jumps
     p.dx = (flags & 0x40) ? 0 : ((flags & 0x10) ? (int32_t)packet_bytes[1] - 256 : (int32_t)packet_bytes[1]);
     p.dy = (flags & 0x80) ? 0 : ((flags & 0x20) ? (int32_t)packet_bytes[2] - 256 : (int32_t)packet_bytes[2]);
 
     mouse_buffer_push(p);
 }
 
-// Enables the second PS/2 port for a mouse, sets default settings, enables data reporting, and
-// wires up its IRQ12 handler — call once at boot, after irq_install()/pic_remap()
+// Initializes the PS/2 mouse and IRQ12 handler; call after IRQ/PIC setup
 void mouse_install(void)
 {
     ps2_write_command(0xA8); // enable the second (auxiliary/mouse) PS/2 port
 
-    // Enable the second port's clock only for now (0 = enabled — the sense is inverted). IRQ12
-    // stays off at the controller until the handshake below is done: with it on early, the
-    // controller raises IRQ12 for the handshake's own ACK bytes while the PIC line is still
-    // masked, the 8259 latches that as a pending request, and unmasking later delivers it as a
-    // spurious interrupt that re-reads the (already polled-and-drained) stale ACK byte — which
-    // then desyncs real packet framing, since an ACK (0xFA) happens to pass the byte-0 sync
-    // check. Polling for the handshake ACKs below works fine regardless of the IRQ-enable bit;
-    // that bit only gates interrupt generation, not data availability.
+    // Enable the second port clock, but keep IRQ12 off until the mouse handshake completes
     ps2_write_command(0x20); // "read controller configuration byte"
     uint8_t config = ps2_read_data();
     config &= ~0x20;         // enable the second port's clock
@@ -147,13 +134,11 @@ void mouse_install(void)
 
     ps2_write_command(0x20);
     config = ps2_read_data();
-    config |= 0x02; // now enable IRQ12 (second port interrupt) — handshake is done, so there's
-                    // nothing already-drained left for the PIC to latch and re-deliver stale
+    config |= 0x02; //// Enable IRQ12 after the handshake to avoid stale interrupts
     ps2_write_command(0x60);
     ps2_write_data(config);
 
-    pic_unmask_irq(12); // nothing has used this line before — don't assume the BIOS left it
-                        // unmasked, same lesson as IRQ4/COM1 from the serial RX work
+    pic_unmask_irq(12); // Explicitly unmask IRQ12 rather than relying on the BIOS state
 
     terminal_writestring("Mouse: PS/2 mouse initialized\n");
 }
