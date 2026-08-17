@@ -5,3 +5,4 @@ kernel.bin
 harold.iso
 *.pcap
 *.img
+.DS_Store
