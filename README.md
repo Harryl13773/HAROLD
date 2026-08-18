@@ -2,6 +2,11 @@
 
 A 32-bit x86 operating system built from scratch: its own bootloader hand-off, GDT/IDT/paging, a preemptive round-robin scheduler, a FAT16 filesystem, a hand-rolled TCP/IP stack, and a 19-syscall userspace with 22 ELF programs — no Linux, no borrowed drivers, no libc.
 
+| | |
+|---|---|
+| ![Boot sequence](screenshots/boot.png) | ![Mouse-driven GUI](screenshots/gui.png) |
+| ![FAT16 shell listing](screenshots/shell-fat16.png) | ![Neural net inference, no FPU](screenshots/neural-net-inference.png) |
+
 ## Features
 
 - **Boot & CPU** — Multiboot handoff from real GRUB, hand-built GDT/IDT, 32 CPU exception handlers with ring-aware fault handling
